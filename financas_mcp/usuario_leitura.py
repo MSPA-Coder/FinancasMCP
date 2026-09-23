@@ -113,7 +113,9 @@ def main() -> None:
     dados = tomllib.loads(caminho.read_text(encoding="utf-8")) if caminho.exists() else vazio
     bloco = dados["ambientes"].setdefault(args.ambiente, {})
     if args.ambiente == "producao":
-        bloco["ssh"] = {"host": args.host, "usuario": args.usuario, "chave": args.chave, "chave_do_host": args.chave_do_host}
+        # Só "tipo base64": a saída do ssh-keyscan traz comentários e quebras de linha.
+        chave_do_host = " ".join(args.chave_do_host.split()[-2:])
+        bloco["ssh"] = {"host": args.host, "usuario": args.usuario, "chave": args.chave, "chave_do_host": chave_do_host}
     sistemas = bloco.setdefault("sistemas", {})
 
     for sistema in args.sistemas.split(","):
@@ -131,6 +133,7 @@ def main() -> None:
         sistemas[sistema] = {"porta": PORTA[sistema], "banco": banco, "usuario": USUARIO, "senha": senha}
         print(f"{args.ambiente}/{sistema}: usuário {USUARIO} pronto em {banco} ({len(TABELAS[sistema])} tabelas)")
 
+    dados["ambiente"] = args.ambiente  # o último configurado vira o padrão
     _gravar(caminho, dados)
     print(f"configuração gravada em {caminho}")
 

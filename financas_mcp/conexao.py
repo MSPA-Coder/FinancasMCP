@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import asyncio
 import datetime as dt
+import logging
 import re
 from decimal import Decimal
 from typing import Any
@@ -26,6 +27,9 @@ import psycopg
 from mcp.server.mcpserver.exceptions import ToolError
 
 from .config import Banco, Config
+
+# O asyncssh narra cada conexão em INFO; no stderr do Claude Desktop isso é ruído.
+logging.getLogger("asyncssh").setLevel(logging.WARNING)
 
 LIMITE_DE_LINHAS = 2000
 TEMPO_MAXIMO = "15s"
