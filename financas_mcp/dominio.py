@@ -50,6 +50,10 @@ ControleBancario -- regras para ler certo:
 - Cartão de crédito: financial_account.account_kind='cartao_credito'. Compras são despesas na
   conta do cartão; saldo negativo = fatura em aberto. Pagar a fatura é transferência de uma conta
   comum para o cartão. card_closing_day/card_due_day = fechamento/vencimento.
+- Aplicação: financial_account.account_kind='aplicacao' (CDB, caixinha, Tesouro). Para o saldo é
+  uma conta comum, sem dado de cartão; aplicar e resgatar são transferências. Os demais tipos são
+  'conta' (conta comum) e 'cartao_credito'. O CB agrupa as contas em Bancos ('conta' em
+  instituição tipo 'Banco'), Corretoras ('conta' em 'Corretora'), Cartões e Aplicações.
 - Fatura projetada: lançamentos cuja bank_operation.operation_key começa com
   'cartao-estimativa:' (gasto estimado pela mediana) ou 'cartao-pagamento:' (pagamento projetado).
   São estimativas, não fatos.
