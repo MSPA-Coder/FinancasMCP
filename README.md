@@ -76,3 +76,17 @@ $env:FINANCAS_MCP_AMBIENTE = "producao"; .\.venv\Scripts\python.exe tests\client
 Os testes confirmam que o próprio banco recusa escrita e esconde as tabelas
 sensíveis mesmo com a barreira do servidor contornada. O `cliente_stdio.py`
 sobe o servidor como o Claude Desktop e imprime só contagens, nunca valores.
+
+## Depois de implantar o CB, o CRV ou o NetWorth
+
+```powershell
+.\.venv\Scripts\python.exe -m financas_mcp.verificar producao
+```
+
+Chama cada ferramenta uma vez, só leitura, e sai com código 1 se alguma
+quebrar ou se uma tabela liberada em `dominio.TABELAS` sumir. As consultas
+daqui dependem do schema de três sistemas que mudam sem este repositório
+saber: em 24/09/2026 a `crv_carteira` estava quebrada em produção porque uma
+revisão do CRV removeu uma coluna, e nada avisou. Este repositório não tem CI
+e o VPS não alcança o Windows, então o passo é manual: rode logo depois do
+`deploy.sh` desses três. Imprime só nomes e contagens, nunca valores.
