@@ -42,8 +42,9 @@ ControleBancario -- regras para ler certo:
   'transferencia' = movimento entre contas próprias (NÃO é gasto nem renda, tem as duas pontas
   ligadas por source_entry_id); 'movimentacao' = aporte/resgate de investimento (sai do caixa,
   mas não é despesa). Análise de gastos/renda: só kind='gerencial'.
-- Saldo de uma conta = financial_account.initial_balance + soma assinada de TODOS os lançamentos
-  dela (inclusive os anteriores a initial_balance_date). Saldo realizado até hoje: só
+- Saldo de uma conta = financial_account.initial_balance + soma assinada dos lançamentos dela a
+  partir da data inicial do sistema (configuração do CB, hoje 2026-01-01; não há lançamento antes
+  dela). initial_balance_date não entra na conta. Saldo realizado até hoje: só
   status='realizado' com realized_date <= hoje, somando realized_amount.
 - Moeda é da conta (financial_account.currency: BRL ou USD). Nunca some moedas diferentes.
 - Cartão de crédito: financial_account.account_kind='cartao_credito'. Compras são despesas na
@@ -65,9 +66,10 @@ ControleBancario -- regras para ler certo:
   31/12/2025 (saldos iniciais nessa data).""",
     "crv": """\
 ControleRendaVariavel -- regras para ler certo:
-- positions: posições abertas (quantity, average_cost, side 'BUY' comprada / 'SELL' vendida).
-  quote_multiplier ajusta preço de cotação; portfolio_id -> portfolios (simulated=true é carteira
-  simulada: exclua de análises reais).
+- positions: posições abertas em ações (quantity, average_cost, side 'BUY' comprada / 'SELL'
+  vendida); uma por (carteira, corretora, ativo, lado). portfolio_id -> portfolios (simulated=true
+  é carteira simulada: exclua de análises reais). Opções abertas ficam em option_positions --
+  a carteira completa são as duas tabelas.
 - tickers: symbol, market ('B3','NYSE','NASDAQ'), currency. Enums guardam o NOME em maiúsculas. quotes: última cotação por ticker
   (last_price, previous_close, observed_at). quote_history: série histórica.
 - transactions: operações; status 'OPEN'/'CLOSED'; result = resultado realizado ao fechar
@@ -84,8 +86,9 @@ NetWorth -- regras para ler certo:
 - valor_da_foto: totais de cada foto por fonte ('CB' ou 'CRV'), papel ('caixa' para contas do CB,
   'investimento' para a carteira do CRV), instituição e moeda. O patrimônio de um dia é a soma dos
   valores daquela foto, convertendo USD para BRL.
-- taxa_de_cambio: quanto vale 1 unidade da moeda em BRL naquele dia (fonte yahoo). Para converter
-  a foto de uma data use a taxa da mesma data ou a última anterior.
+- taxa_de_cambio: quanto vale 1 unidade da moeda em BRL naquele dia, por fonte (hoje só yahoo;
+  ptax pode entrar). Para converter a foto de uma data use a taxa da mesma data ou a última
+  anterior; com duas fontes no mesmo dia, vale ptax antes de yahoo.
 - Os cartões de crédito entram no caixa do CB com saldo negativo.""",
 }
 

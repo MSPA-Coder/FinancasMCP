@@ -122,9 +122,9 @@ def main() -> None:
         conteiner = CONTEINER[sistema]
         banco = _executar(args, conteiner, 'printenv POSTGRES_DB')
         senha = secrets.token_urlsafe(32)
-        # Quem cria e concede é um superusuário, pelo socket local do contêiner.
-        # No CB o dono das tabelas não é superusuário (endurecimento) e existe o
-        # `postgres`; no CRV e no NetWorth o próprio POSTGRES_USER é o superusuário.
+        # Quem cria e concede é um superusuário, pelo socket local do contêiner. Em
+        # todos os bancos é o POSTGRES_USER (dono das tabelas); desde 24/09/2026 as
+        # aplicações conectam com um papel restrito à parte (`<app>_app`, só DML).
         superusuario = _executar(args, conteiner, (
             'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -tAc "select rolname from pg_roles '
             'where rolsuper and rolcanlogin order by rolname = current_user desc limit 1"'

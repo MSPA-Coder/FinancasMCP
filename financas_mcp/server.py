@@ -322,30 +322,47 @@ async def cb_projecao_de_caixa(meses: int = 6) -> dict:
 
 @mcp.tool(annotations=LEITURA)
 async def crv_carteira(incluir_simuladas: bool = False) -> dict:
-    """Posições abertas com custo, última cotação e resultado não realizado (aproximado).
+    """Posições abertas (ações e opções) com custo, última cotação e resultado não realizado.
 
-    valor_mercado usa a última cotação (ou o fechamento anterior) vezes quote_multiplier;
-    posição vendida (side 'SELL') entra com sinal negativo. Moeda na coluna moeda.
+    instrumento: 'acao' ou 'opcao' (opção traz ativo-objeto, strike e vencimento).
+    preco = última cotação, ou o fechamento anterior quando não há; valor_mercado =
+    quantidade x preco, com sinal negativo para posição vendida (side 'SELL'), como o CRV
+    calcula o valor de desmonte. Moeda na coluna moeda: não some BRL com USD.
     """
     return await conexoes().consultar("crv", """
-        select pf.name as carteira, pf.simulated as simulada, br.name as corretora, t.symbol as ativo,
-               t.market as mercado, t.currency as moeda, p.side as lado, p.quantity as quantidade,
-               p.average_cost as custo_medio, p.quantity * p.average_cost as custo_total,
-               coalesce(q.last_price, q.previous_close) * p.quote_multiplier as preco,
-               q.observed_at as cotado_em,
-               case when p.side = 'BUY' then 1 else -1 end * p.quantity
-                   * coalesce(q.last_price, q.previous_close) * p.quote_multiplier as valor_mercado,
-               case when p.side = 'BUY' then 1 else -1 end
-                   * (coalesce(q.last_price, q.previous_close) * p.quote_multiplier - p.average_cost) * p.quantity
+        with abertas as (
+            select 'acao' as instrumento, p.portfolio_id, p.broker_id, t.symbol as ativo,
+                   null::text as objeto, null::numeric as strike, null::date as vencimento,
+                   t.market::text as mercado, t.currency as moeda, p.side, p.quantity, p.average_cost,
+                   coalesce(q.last_price, q.previous_close) as preco, q.observed_at as cotado_em,
+                   p.opened_on
+            from positions p
+            join tickers t on t.id = p.ticker_id
+            left join quotes q on q.ticker_id = p.ticker_id
+            union all
+            select 'opcao', op.portfolio_id, op.broker_id, t.symbol, obj.symbol, c.strike, v.exercise_date,
+                   t.market::text, t.currency, op.side, op.quantity, op.average_cost,
+                   coalesce(oq.last_price, oq.previous_close), oq.observed_at, op.opened_on
+            from option_positions op
+            join option_contracts c on c.id = op.contract_id
+            join tickers t on t.id = c.ticker_id
+            join tickers obj on obj.id = c.underlying_ticker_id
+            join option_expirations v on v.id = c.expiration_id
+            left join option_quotes oq on oq.contract_id = op.contract_id
+        )
+        select pf.name as carteira, pf.simulated as simulada, br.name as corretora, a.instrumento,
+               a.ativo, a.objeto, a.strike, a.vencimento, a.mercado, a.moeda, a.side as lado,
+               a.quantity as quantidade, a.average_cost as custo_medio,
+               a.quantity * a.average_cost as custo_total, a.preco, a.cotado_em,
+               case when a.side = 'BUY' then 1 else -1 end * a.quantity * a.preco as valor_mercado,
+               case when a.side = 'BUY' then 1 else -1 end * (a.preco - a.average_cost) * a.quantity
                    as resultado_aberto,
-               p.opened_on as aberta_em
-        from positions p
-        join tickers t on t.id = p.ticker_id
-        join portfolios pf on pf.id = p.portfolio_id
-        left join brokers br on br.id = p.broker_id
-        left join quotes q on q.ticker_id = p.ticker_id
-        where p.quantity <> 0 and (%(simuladas)s or not pf.simulated)
-        order by t.currency, valor_mercado desc nulls last
+               a.opened_on as aberta_em
+        from abertas a
+        join portfolios pf on pf.id = a.portfolio_id
+        left join brokers br on br.id = a.broker_id
+        where a.quantity <> 0 and (%(simuladas)s or not pf.simulated)
+        order by a.moeda, a.instrumento, valor_mercado desc nulls last
     """, {"simuladas": incluir_simuladas})
 
 
@@ -414,7 +431,8 @@ async def nw_historico(
     """Evolução do patrimônio: caixa (CB) e investimentos (CRV) em BRL, convertendo USD.
 
     Usa a última foto de cada período e a taxa de câmbio da data da foto (ou a anterior mais
-    próxima). Padrão: tudo, por mês.
+    próxima); com duas fontes no mesmo dia, vale a preferida do NetWorth (ptax, depois yahoo).
+    Padrão: tudo, por mês.
     """
     inicio_d = _data(inicio, date(2000, 1, 1))
     fim_d = _data(fim, date.today())
@@ -429,7 +447,11 @@ async def nw_historico(
             select fo.data, v.papel, v.moeda, v.total,
                    case when v.moeda = 'BRL' then 1 else (
                        select t.taxa from taxa_de_cambio t
-                       where t.moeda = v.moeda and t.data <= fo.data order by t.data desc limit 1
+                       where t.moeda = v.moeda and t.data <= fo.data
+                       -- Mesma escolha de consolidado/cambio.py (PREFERENCIA_DE_FONTE).
+                       order by t.data desc, case t.fonte when 'ptax' then 0 when 'yahoo' then 1 else 99 end,
+                                t.fonte
+                       limit 1
                    ) end as taxa
             from fotos fo join valor_da_foto v on v.foto_id = fo.id
         )
