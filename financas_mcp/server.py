@@ -1,6 +1,6 @@
-"""Servidor MCP somente leitura sobre CB, CRV e NetWorth.
+"""Servidor MCP somente leitura sobre CB e CRV.
 
-Ferramentas prontas (cb_*, crv_*, nw_*) fazem as contas no banco, com as regras
+Ferramentas prontas (cb_*, crv_*) fazem as contas no banco, com as regras
 de cada domínio; `esquema` e `sql` cobrem o resto. Tudo passa por
 `Conexoes.consultar`, que abre transação READ ONLY com o usuário de leitura.
 """
@@ -22,7 +22,7 @@ mcp = MCPServer("financas", instructions=dominio.INSTRUCOES)
 LEITURA = ToolAnnotations(readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False)
 _conexoes: Conexoes | None = None
 
-Sistema = Literal["cb", "crv", "nw"]
+Sistema = Literal["cb", "crv"]
 
 
 def conexoes() -> Conexoes:
@@ -417,52 +417,6 @@ async def crv_operacoes(
           and coalesce(tr.closed_on, tr.opened_on) between %(inicio)s and %(fim)s
         order by coalesce(tr.closed_on, tr.opened_on) desc
     """, {"inicio": inicio_d, "fim": fim_d, "status": status})
-
-
-# --- NetWorth -------------------------------------------------------------------
-
-
-@mcp.tool(annotations=LEITURA)
-async def nw_historico(
-    inicio: str | None = None,
-    fim: str | None = None,
-    frequencia: Literal["dia", "semana", "mes"] = "mes",
-) -> dict:
-    """Evolução do patrimônio: caixa (CB) e investimentos (CRV) em BRL, convertendo USD.
-
-    Usa a última foto de cada período e a taxa de câmbio da data da foto (ou a anterior mais
-    próxima); com duas fontes no mesmo dia, vale a preferida do NetWorth (ptax, depois yahoo).
-    Padrão: tudo, por mês.
-    """
-    inicio_d = _data(inicio, date(2000, 1, 1))
-    fim_d = _data(fim, date.today())
-    periodo = {"dia": "day", "semana": "week", "mes": "month"}[frequencia]
-    return await conexoes().consultar("nw", f"""
-        with fotos as (
-            select distinct on (date_trunc('{periodo}', f.data)) f.id, f.data
-            from foto_do_patrimonio f
-            where f.data between %(inicio)s and %(fim)s
-            order by date_trunc('{periodo}', f.data), f.data desc
-        ), valores as (
-            select fo.data, v.papel, v.moeda, v.total,
-                   case when v.moeda = 'BRL' then 1 else (
-                       select t.taxa from taxa_de_cambio t
-                       where t.moeda = v.moeda and t.data <= fo.data
-                       -- Mesma escolha de consolidado/cambio.py (PREFERENCIA_DE_FONTE).
-                       order by t.data desc, case t.fonte when 'ptax' then 0 when 'yahoo' then 1 else 99 end,
-                                t.fonte
-                       limit 1
-                   ) end as taxa
-            from fotos fo join valor_da_foto v on v.foto_id = fo.id
-        )
-        select data,
-               sum(total * taxa) filter (where papel = 'caixa') as caixa_brl,
-               sum(total * taxa) filter (where papel = 'investimento') as investimentos_brl,
-               sum(total * taxa) as patrimonio_brl,
-               sum(total) filter (where moeda = 'USD') as parte_em_usd,
-               bool_or(taxa is null) as faltou_cambio
-        from valores group by data order by data
-    """, {"inicio": inicio_d, "fim": fim_d})
 
 
 def main() -> None:

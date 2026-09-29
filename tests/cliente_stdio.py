@@ -38,7 +38,6 @@ async def main() -> None:
             ("cb_projecao_de_caixa", {"meses": 6}),
             ("crv_carteira", {}),
             ("crv_proventos", {"agrupar": "mes"}),
-            ("nw_historico", {"frequencia": "mes"}),
             ("sql", {"sistema": "cb", "consulta": "select count(*) as lancamentos from cash_flow_entry"}),
             ("sql", {"sistema": "cb", "consulta": "delete from cash_flow_entry"}),
             ("sql", {"sistema": "cb", "consulta": "select count(*) from app_user"}),

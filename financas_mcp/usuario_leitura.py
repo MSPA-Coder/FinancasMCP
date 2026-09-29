@@ -28,9 +28,8 @@ USUARIO = "mcp_leitura"
 CONTEINER = {
     "cb": "controle-bancario-postgres-1",
     "crv": "controle-renda-variavel-db-1",
-    "nw": "networth-postgres-1",
 }
-PORTA = {"cb": 5202, "crv": 5302, "nw": 5702}
+PORTA = {"cb": 5202, "crv": 5302}
 
 
 def _sql(banco: str, senha: str, tabelas: tuple[str, ...]) -> str:
@@ -99,7 +98,7 @@ def _gravar(caminho: Path, dados: dict) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("ambiente", choices=["local", "producao"])
-    parser.add_argument("--sistemas", default="cb,crv,nw")
+    parser.add_argument("--sistemas", default="cb,crv")
     parser.add_argument("--host")
     parser.add_argument("--usuario", default="ubuntu")
     parser.add_argument("--chave")

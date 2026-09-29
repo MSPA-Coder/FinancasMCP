@@ -7,7 +7,7 @@ As consultas deste servidor dependem do schema de três sistemas que mudam sem
 ele saber. Em 24/09/2026 a `crv_carteira` estava quebrada em produção porque a
 revisão 0019 do CRV removeu uma coluna que ela lia -- e nada avisou, porque este
 repositório não tem CI e a suíte roda contra os bancos locais. Rodar isto logo
-depois de implantar o CB, o CRV ou o NetWorth é o que fecha essa janela.
+depois de implantar o CB ou o CRV é o que fecha essa janela.
 
 Tudo é leitura: as mesmas transações `READ ONLY` do servidor, com o mesmo
 usuário `mcp_leitura`. Nenhum valor é impresso; só o nome da ferramenta, a
@@ -27,7 +27,7 @@ def _chamadas(server) -> list[tuple[str, object]]:
     """Cada ferramenta com os argumentos que percorrem os ramos de SQL dela."""
     return [
         ("sistemas", server.sistemas()),
-        *[(f"esquema({s})", server.esquema(s)) for s in ("cb", "crv", "nw")],
+        *[(f"esquema({s})", server.esquema(s)) for s in ("cb", "crv")],
         ("cb_contas", server.cb_contas()),
         ("cb_resumo_mensal", server.cb_resumo_mensal()),
         ("cb_resumo_mensal(previsto, conta)", server.cb_resumo_mensal(visao="previsto", agrupar="conta")),
@@ -40,7 +40,6 @@ def _chamadas(server) -> list[tuple[str, object]]:
         ("crv_carteira(simuladas)", server.crv_carteira(incluir_simuladas=True)),
         ("crv_proventos(ativo)", server.crv_proventos(agrupar="ativo")),
         ("crv_operacoes(todos)", server.crv_operacoes(status="todos")),
-        ("nw_historico", server.nw_historico()),
     ]
 
 

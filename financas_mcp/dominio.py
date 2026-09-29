@@ -22,13 +22,11 @@ TABELAS: dict[str, tuple[str, ...]] = {
         "option_contracts", "option_expirations", "option_positions",
         "option_position_movements", "option_quotes",
     ),
-    "nw": ("foto_do_patrimonio", "valor_da_foto", "taxa_de_cambio"),
 }
 
 NOMES = {
     "cb": "ControleBancario (contas, lançamentos, cartões, orçamento)",
     "crv": "ControleRendaVariavel (carteira de ações e opções, operações, proventos)",
-    "nw": "NetWorth (fotos diárias do patrimônio consolidado de CB e CRV)",
 }
 
 REGRAS: dict[str, str] = {
@@ -84,24 +82,14 @@ ControleRendaVariavel -- regras para ler certo:
   payment_date.
 - option_*: opções (contratos, vencimentos, posições, movimentos, cotações).
 - Valores monetários na moeda do ticker/carteira; não some BRL com USD.""",
-    "nw": """\
-NetWorth -- regras para ler certo:
-- foto_do_patrimonio: uma foto por dia (data), só fotos completas.
-- valor_da_foto: totais de cada foto por fonte ('CB' ou 'CRV'), papel ('caixa' para contas do CB,
-  'investimento' para a carteira do CRV), instituição e moeda. O patrimônio de um dia é a soma dos
-  valores daquela foto, convertendo USD para BRL.
-- taxa_de_cambio: quanto vale 1 unidade da moeda em BRL naquele dia, por fonte (hoje só yahoo;
-  ptax pode entrar). Para converter a foto de uma data use a taxa da mesma data ou a última
-  anterior; com duas fontes no mesmo dia, vale ptax antes de yahoo.
-- Os cartões de crédito entram no caixa do CB com saldo negativo.""",
 }
 
 INSTRUCOES = """\
-Dados financeiros pessoais do usuário, em três sistemas, SOMENTE LEITURA:
-cb = ControleBancario, crv = ControleRendaVariavel, nw = NetWorth.
+Dados financeiros pessoais do usuário, em dois sistemas, SOMENTE LEITURA:
+cb = ControleBancario, crv = ControleRendaVariavel.
 
 Como trabalhar:
-1. Prefira as ferramentas prontas (cb_*, crv_*, nw_*): as somas já saem certas.
+1. Prefira as ferramentas prontas (cb_*, crv_*): as somas já saem certas.
 2. Para o que elas não cobrem, chame `esquema(sistema)` uma vez para ver tabelas, colunas e as
    regras de leitura, e depois `sql(sistema, consulta)` com um SELECT.
 3. Respeite as regras: no CB, gasto/renda só com categorias kind='gerencial'; transferências
