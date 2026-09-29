@@ -28,7 +28,7 @@ import tomllib
 from dataclasses import dataclass
 from pathlib import Path
 
-SISTEMAS = ("cb", "crv", "nw")
+SISTEMAS = ("cb", "crv")
 
 
 @dataclass(frozen=True)

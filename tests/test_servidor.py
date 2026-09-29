@@ -87,7 +87,6 @@ def test_usuario_de_leitura_nao_escreve_nem_com_a_barreira_contornada(comando):
 @pytest.mark.parametrize(("sistema", "tabela"), [
     ("cb", "app_user"), ("cb", "audit_log"), ("cb", "django_session"), ("cb", "app_setting"),
     ("crv", "users"), ("crv", "audit_log"), ("crv", "app_settings"),
-    ("nw", "auth_user"), ("nw", "django_session"),
 ])
 def test_tabelas_sensiveis_ficam_invisiveis(sistema, tabela):
     with _conectar(sistema) as conexao, pytest.raises(psycopg.errors.InsufficientPrivilege):
@@ -110,7 +109,7 @@ def _ok(resultado, minimo=1):
 
 def test_sistemas_e_esquema():
     assert rodar(server.sistemas())["ambiente"] == "local"
-    for sistema in ("cb", "crv", "nw"):
+    for sistema in ("cb", "crv"):
         esquema = rodar(server.esquema(sistema))
         assert esquema["regras"]
         assert esquema["tabelas"]
@@ -132,7 +131,7 @@ def test_ferramentas_do_cb():
 
 def test_saldo_do_carbon_bate_com_o_do_sistema():
     # O cartão Carbon local tem saldo realizado conhecido (-10.656,92): a mesma conta
-    # que o dashboard do NetWorth mostra.
+    # que a tela de contas do CB mostra.
     contas = rodar(server.cb_contas())
     i = contas["colunas"].index("saldo_realizado_hoje")
     j = contas["colunas"].index("conta")
@@ -140,13 +139,11 @@ def test_saldo_do_carbon_bate_com_o_do_sistema():
     assert saldos.get("Carbon") == "-10656.92"
 
 
-def test_ferramentas_do_crv_e_do_networth():
+def test_ferramentas_do_crv():
     _ok(rodar(server.crv_carteira()))
     rodar(server.crv_proventos(agrupar="ativo"))
     rodar(server.crv_operacoes(status="todos"))
     rodar(server.crv_operacoes())
-    historico = _ok(rodar(server.nw_historico()))
-    assert "patrimonio_brl" in historico["colunas"]
 
 
 def test_sql_livre_com_limite():

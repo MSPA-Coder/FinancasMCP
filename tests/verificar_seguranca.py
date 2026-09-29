@@ -20,7 +20,6 @@ TENTATIVAS = {
            "select count(*) from app_user", "select count(*) from audit_log", "select count(*) from app_setting"],
     "crv": ["update positions set quantity = quantity where false", "select count(*) from users",
             "select count(*) from app_settings"],
-    "nw": ["delete from valor_da_foto where false", "select count(*) from auth_user"],
 }
 
 

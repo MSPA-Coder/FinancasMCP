@@ -1,7 +1,7 @@
 # FinancasMCP
 
 Servidor MCP **somente leitura** que dá ao Claude acesso aos dados do
-ControleBancario (`cb`), do ControleRendaVariavel (`crv`) e do NetWorth (`nw`).
+ControleBancario (`cb`) e do ControleRendaVariavel (`crv`).
 
 ## Como funciona
 
@@ -33,7 +33,6 @@ ControleBancario (`cb`), do ControleRendaVariavel (`crv`) e do NetWorth (`nw`).
 | `crv_carteira` | posições com custo, cotação e resultado aberto |
 | `crv_proventos` | dividendos, JCP e aluguel por mês, ativo ou tipo |
 | `crv_operacoes` | operações e resultado realizado |
-| `nw_historico` | evolução do patrimônio em BRL (caixa + investimentos) |
 
 ## Instalação
 
@@ -77,7 +76,7 @@ Os testes confirmam que o próprio banco recusa escrita e esconde as tabelas
 sensíveis mesmo com a barreira do servidor contornada. O `cliente_stdio.py`
 sobe o servidor como o Claude Desktop e imprime só contagens, nunca valores.
 
-## Depois de implantar o CB, o CRV ou o NetWorth
+## Depois de implantar o CB ou o CRV
 
 ```powershell
 .\.venv\Scripts\python.exe -m financas_mcp.verificar producao
