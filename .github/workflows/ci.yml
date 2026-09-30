@@ -34,8 +34,13 @@ jobs:
         run: python -m pip install -e ".[dev]"
       - name: Ruff
         run: python -m ruff check .
-      - name: Testes
-        run: python -m pytest -q
+      # Os testes marcados `banco_local` (18 casos) exercitam os bancos de teste do
+      # CB e do CRV e precisam do `~/.financas-mcp/config.toml` da maquina do
+      # mantenedor. Montar os dois esquemas na CI exigiria os repositorios
+      # privados de cada sistema; por isso rodam localmente, antes de cada PR
+      # que mexe em `server.py` ou `dominio.py`. Aqui roda o que nao depende de banco.
+      - name: Testes (sem banco)
+        run: python -m pytest -q -m "not banco_local"
       # O Dependabot avisa de versao nova; esta etapa responde outra pergunta:
       # a versao instalada AGORA tem CVE conhecido? O projeto em si nao esta no
       # PyPI, por isso `--skip-editable`. Vulnerabilidade sem correcao publicada

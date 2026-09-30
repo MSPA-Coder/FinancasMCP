@@ -31,6 +31,11 @@ select = ["E", "F", "W", "I", "B", "UP", "SIM"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = [
+    # Testes de integração contra os bancos LOCAIS de teste (precisam de ~/.financas-mcp/config.toml).
+    # A CI não os roda: `-m "not banco_local"`. Localmente rodam todos, sem filtro.
+    "banco_local: precisa do ambiente local com os bancos de teste do CB e do CRV",
+]
 
 [tool.ruff.lint.per-file-ignores]
 # SQL em strings: quebrar as linhas das consultas as deixaria piores de ler.

@@ -5,6 +5,9 @@ Precisam do `~/.financas-mcp/config.toml` com o ambiente `local`, criado por
 sem banco; o resto exercita as ferramentas e, principalmente, confirma que o
 banco recusa escrita e esconde as tabelas sensíveis mesmo quando a barreira
 de cima é contornada.
+
+Os que precisam de banco levam `@pytest.mark.banco_local` e ficam fora da CI
+(`pytest -m "not banco_local"`); localmente rode a suíte inteira, sem filtro.
 """
 
 from __future__ import annotations
@@ -75,6 +78,7 @@ def _conectar(sistema: str):
     )
 
 
+@pytest.mark.banco_local
 @pytest.mark.parametrize("comando", [
     "update cash_flow_entry set entry_amount = entry_amount where false",
     "delete from cash_flow_entry where false",
@@ -85,6 +89,7 @@ def test_usuario_de_leitura_nao_escreve_nem_com_a_barreira_contornada(comando):
         conexao.execute(comando)
 
 
+@pytest.mark.banco_local
 @pytest.mark.parametrize(("sistema", "tabela"), [
     ("cb", "app_user"), ("cb", "audit_log"), ("cb", "django_session"), ("cb", "app_setting"),
     ("crv", "users"), ("crv", "audit_log"), ("crv", "app_settings"),
@@ -94,6 +99,7 @@ def test_tabelas_sensiveis_ficam_invisiveis(sistema, tabela):
         conexao.execute(f"select count(*) from {tabela}")
 
 
+@pytest.mark.banco_local
 def test_ferramenta_sql_recusa_escrita():
     with pytest.raises(ConsultaRecusada):
         rodar(server.sql("cb", "delete from cash_flow_entry"))
@@ -108,6 +114,7 @@ def _ok(resultado, minimo=1):
     return resultado
 
 
+@pytest.mark.banco_local
 def test_sistemas_e_esquema():
     assert rodar(server.sistemas())["ambiente"] == "local"
     for sistema in ("cb", "crv"):
@@ -116,6 +123,7 @@ def test_sistemas_e_esquema():
         assert esquema["tabelas"]
 
 
+@pytest.mark.banco_local
 def test_ferramentas_do_cb():
     contas = _ok(rodar(server.cb_contas()))
     assert "saldo_realizado_hoje" in contas["colunas"]
@@ -130,6 +138,7 @@ def test_ferramentas_do_cb():
     _ok(rodar(server.cb_projecao_de_caixa(meses=3)))
 
 
+@pytest.mark.banco_local
 def test_status_efetivo_deriva_da_data_e_nao_do_status_gravado():
     # O CB só normaliza o status ao gravar: em aberto com data passada segue
     # 'a_vencer' no banco. A expressão é testada sobre linhas sintéticas, para não
@@ -150,6 +159,7 @@ def test_status_efetivo_deriva_da_data_e_nao_do_status_gravado():
     assert efetivo[("vencidos", (hoje + dia(1)).isoformat())] == "a_vencer"
 
 
+@pytest.mark.banco_local
 def test_filtro_de_status_dos_lancamentos_usa_o_efetivo():
     por_status = {
         s: rodar(server.cb_lancamentos(status=s, limite=2000))
@@ -168,6 +178,7 @@ def test_filtro_de_status_dos_lancamentos_usa_o_efetivo():
         assert all((d < hoje) if s == "vencidos" else (d >= hoje) for d in datas), s
 
 
+@pytest.mark.banco_local
 def test_saldo_do_carbon_bate_com_o_do_sistema():
     # O cartão Carbon local tem saldo realizado conhecido (-10.656,92): a mesma conta
     # que a tela de contas do CB mostra.
@@ -178,6 +189,7 @@ def test_saldo_do_carbon_bate_com_o_do_sistema():
     assert saldos.get("Carbon") == "-10656.92"
 
 
+@pytest.mark.banco_local
 def test_ferramentas_do_crv():
     _ok(rodar(server.crv_carteira()))
     rodar(server.crv_proventos(agrupar="ativo"))
@@ -185,6 +197,7 @@ def test_ferramentas_do_crv():
     rodar(server.crv_operacoes())
 
 
+@pytest.mark.banco_local
 def test_sql_livre_com_limite():
     resultado = rodar(server.sql("cb", "select generate_series(1, 5000) as n"))
     assert resultado["quantidade"] == 2000
