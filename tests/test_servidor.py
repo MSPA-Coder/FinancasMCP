@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+from datetime import date, timedelta
 
 import psycopg
 import pytest
@@ -127,6 +128,44 @@ def test_ferramentas_do_cb():
     _ok(faturas["importadas"])
     _ok(faturas["futuro"])
     _ok(rodar(server.cb_projecao_de_caixa(meses=3)))
+
+
+def test_status_efetivo_deriva_da_data_e_nao_do_status_gravado():
+    # O CB só normaliza o status ao gravar: em aberto com data passada segue
+    # 'a_vencer' no banco. A expressão é testada sobre linhas sintéticas, para não
+    # depender de haver uma linha assim nos dados locais.
+    resultado = rodar(server.conexoes().consultar("cb", f"""
+        select e.status as gravado, e.due_date as vencimento, {server._STATUS_EFETIVO} as efetivo
+        from (values ('a_vencer', current_date - 1), ('a_vencer', current_date),
+                     ('vencidos', current_date + 1), ('realizado', current_date - 30))
+             as e(status, due_date)
+        order by e.due_date
+    """))
+    efetivo = {(g, v): s for g, v, s in resultado["linhas"]}
+    hoje = date.today()
+    dia = timedelta
+    assert efetivo[("realizado", (hoje - dia(30)).isoformat())] == "realizado"
+    assert efetivo[("a_vencer", (hoje - dia(1)).isoformat())] == "vencidos"
+    assert efetivo[("a_vencer", hoje.isoformat())] == "a_vencer"
+    assert efetivo[("vencidos", (hoje + dia(1)).isoformat())] == "a_vencer"
+
+
+def test_filtro_de_status_dos_lancamentos_usa_o_efetivo():
+    por_status = {
+        s: rodar(server.cb_lancamentos(status=s, limite=2000))
+        for s in ("realizado", "a_vencer", "vencidos", "todos")
+    }
+    assert all(not r["truncado"] for r in por_status.values())
+    parcial = sum(por_status[s]["quantidade"] for s in ("realizado", "a_vencer", "vencidos"))
+    assert parcial == por_status["todos"]["quantidade"]
+    hoje = date.today().isoformat()
+    for s in ("realizado", "a_vencer", "vencidos"):
+        col = por_status[s]["colunas"].index("status")
+        assert {linha[col] for linha in por_status[s]["linhas"]} <= {s}, s
+    for s, nome in (("vencidos", "vencimento"), ("a_vencer", "vencimento")):
+        col = por_status[s]["colunas"].index(nome)
+        datas = [linha[col] for linha in por_status[s]["linhas"]]
+        assert all((d < hoje) if s == "vencidos" else (d >= hoje) for d in datas), s
 
 
 def test_saldo_do_carbon_bate_com_o_do_sistema():

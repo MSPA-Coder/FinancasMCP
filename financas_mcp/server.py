@@ -43,6 +43,13 @@ def _inicio_do_ano() -> date:
 # Expressões do CB reutilizadas: a data e o valor que valem para cada lançamento.
 _DATA_REF = "case when e.status = 'realizado' then e.realized_date else e.due_date end"
 _VALOR_REF = "case when e.status = 'realizado' then coalesce(e.realized_amount, e.entry_amount) else e.entry_amount end"
+# O `status` gravado só é normalizado quando alguém grava o lançamento: em aberto
+# com vencimento passado continua 'a_vencer' até lá. O CB compensa na leitura; aqui
+# o status que vale é derivado da data, como faz `cb_contas` em `vencido_em_aberto`.
+_STATUS_EFETIVO = (
+    "case when e.status = 'realizado' then 'realizado' "
+    "when e.due_date < current_date then 'vencidos' else 'a_vencer' end"
+)
 _SINAL = "case when e.entry_type = 'receita' then 1 else -1 end"
 _PROJECAO_DO_CARTAO = "coalesce(o.operation_key, '') ~ '^cartao-(estimativa|pagamento):'"
 
@@ -186,10 +193,12 @@ async def cb_lancamentos(
 
     texto busca na descrição (sem diferenciar maiúsculas); categoria pelo nome exato.
     Cada linha traz a data e o valor que valem (realizado ou previsto), parcela e se é
-    estimativa da fatura projetada. limite máximo 2000.
+    estimativa da fatura projetada. limite máximo 2000. O status é o efetivo: em aberto
+    com vencimento anterior a hoje é 'vencidos', mesmo que o CB ainda o guarde como
+    'a_vencer'.
     """
     return await conexoes().consultar("cb", f"""
-        select e.id, {_DATA_REF} as data, e.status, e.entry_type as tipo, {_VALOR_REF} as valor,
+        select e.id, {_DATA_REF} as data, {_STATUS_EFETIVO} as status, e.entry_type as tipo, {_VALOR_REF} as valor,
                e.description as descricao, c.category_name as categoria, c.kind as natureza,
                a.account_name as conta, a.currency as moeda,
                case when e.installments > 1 then e.current_installment || '/' || e.installments end as parcela,
@@ -204,7 +213,7 @@ async def cb_lancamentos(
           and (%(fim)s::date is null or {_DATA_REF} <= %(fim)s::date)
           and (%(conta)s::int is null or e.account_id = %(conta)s::int)
           and (%(categoria)s::text is null or c.category_name = %(categoria)s::text)
-          and (%(status)s = 'todos' or e.status = %(status)s)
+          and (%(status)s = 'todos' or {_STATUS_EFETIVO} = %(status)s)
           and (%(tipo)s = 'todos' or e.entry_type = %(tipo)s)
           and (%(gerenciais)s = false or c.kind = 'gerencial')
         order by {_DATA_REF} desc, e.id desc
