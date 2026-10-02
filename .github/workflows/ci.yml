@@ -30,22 +30,30 @@ jobs:
           # `requires-python = ">=3.14"` no pyproject: a CI roda a versao que o
           # projeto exige, nao uma mais antiga.
           python-version: "3.14"
-      - name: Instalar o projeto e as ferramentas de desenvolvimento
-        run: python -m pip install -e ".[dev]"
+      # Mesma versao do uv que os Dockerfiles dos irmaos fixam. Vem pelo pip, e
+      # nao por action: a politica do repositorio barra action de terceiro.
+      - name: Instalar o uv
+        run: python -m pip install "uv==0.12.10"
+      # `--locked` recusa um uv.lock que nao bate com o pyproject.toml, em vez de
+      # resolver de novo em silencio: a CI testa exatamente as versoes que a
+      # maquina do mantenedor instala. O interpretador e o do setup-python; sem
+      # `UV_PYTHON_DOWNLOADS=never` o uv poderia baixar outro.
+      - name: Instalar o projeto pelo lock
+        env:
+          UV_PYTHON_DOWNLOADS: never
+        run: python -m uv sync --locked --extra dev --python "$(command -v python)"
       - name: Ruff
-        run: python -m ruff check .
+        run: .venv/bin/python -m ruff check .
       # Os testes marcados `banco_local` (18 casos) exercitam os bancos de teste do
       # CB e do CRV e precisam do `~/.financas-mcp/config.toml` da maquina do
-      # mantenedor. Montar os dois esquemas na CI exigiria os repositorios
-      # privados de cada sistema; por isso rodam localmente, antes de cada PR
-      # que mexe em `server.py` ou `dominio.py`. Aqui roda o que nao depende de banco.
+      # mantenedor. Os dois repositorios sao publicos, mas a CI ainda nao monta os
+      # esquemas a partir deles; por isso rodam localmente, antes de cada PR que
+      # mexe em `server.py` ou `dominio.py`. Aqui roda o que nao depende de banco.
       - name: Testes (sem banco)
-        run: python -m pytest -q -m "not banco_local"
+        run: .venv/bin/python -m pytest -q -m "not banco_local"
       # O Dependabot avisa de versao nova; esta etapa responde outra pergunta:
       # a versao instalada AGORA tem CVE conhecido? O projeto em si nao esta no
       # PyPI, por isso `--skip-editable`. Vulnerabilidade sem correcao publicada
       # sai por `--ignore-vuln <ID>` com comentario dizendo por que.
       - name: Auditar dependencias instaladas (CVE conhecido)
-        run: |
-          python -m pip install "pip-audit>=2.10,<3"
-          pip-audit --progress-spinner=off --skip-editable
+        run: .venv/bin/pip-audit --progress-spinner=off --skip-editable

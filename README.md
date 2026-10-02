@@ -7,7 +7,7 @@ ControleBancario (`cb`) e do ControleRendaVariavel (`crv`).
 
 - Roda no Windows, iniciado pelo Claude Desktop (transporte stdio).
 - Em produção, abre um túnel SSH pela Tailscale até o VPS e fala com os bancos
-  que escutam só em `127.0.0.1` de lá (portas 5202, 5302 e 5702). Nada novo fica
+  que escutam só em `127.0.0.1` de lá (portas 5202 e 5302). Nada novo fica
   exposto na internet.
 - Cada banco tem um usuário `mcp_leitura` com `SELECT` apenas nas tabelas
   financeiras (`financas_mcp/dominio.py`, `TABELAS`) e
@@ -36,9 +36,13 @@ ControleBancario (`cb`) e do ControleRendaVariavel (`crv`).
 
 ## Instalação
 
+As versões ficam travadas no `uv.lock`, como nos outros repositórios. O uv
+entra uma vez pelo pip e cria o `.venv` no mesmo lugar de antes, então a
+configuração do Claude Desktop abaixo não muda:
+
 ```powershell
-py -3.14 -m venv .venv
-.\.venv\Scripts\python.exe -m pip install -e ".[dev]"
+py -3.14 -m pip install --user "uv==0.12.10"
+py -3.14 -m uv sync --locked --extra dev
 
 # usuário de leitura + config (senhas geradas e gravadas, nunca impressas)
 .\.venv\Scripts\python.exe -m financas_mcp.usuario_leitura local
@@ -84,8 +88,9 @@ sobe o servidor como o Claude Desktop e imprime só contagens, nunca valores.
 
 Chama cada ferramenta uma vez, só leitura, e sai com código 1 se alguma
 quebrar ou se uma tabela liberada em `dominio.TABELAS` sumir. As consultas
-daqui dependem do schema de três sistemas que mudam sem este repositório
+daqui dependem do schema de dois sistemas que mudam sem este repositório
 saber: em 24/09/2026 a `crv_carteira` estava quebrada em produção porque uma
-revisão do CRV removeu uma coluna, e nada avisou. Este repositório não tem CI
-e o VPS não alcança o Windows, então o passo é manual: rode logo depois do
-`deploy.sh` desses três. Imprime só nomes e contagens, nunca valores.
+revisão do CRV removeu uma coluna, e nada avisou. A CI deste repositório roda
+só os testes sem banco, e o VPS não alcança o Windows, então o passo é manual:
+rode logo depois do `deploy.sh` desses dois. Imprime só nomes e contagens, nunca
+valores.
