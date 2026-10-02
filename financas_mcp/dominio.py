@@ -75,11 +75,17 @@ ControleRendaVariavel -- regras para ler certo:
 - tickers: symbol, market ('B3','NYSE','NASDAQ'), currency. Enums guardam o NOME em maiúsculas. quotes: última cotação por ticker
   (last_price, previous_close, observed_at). quote_history: série histórica.
 - transactions: operações; status 'OPEN'/'CLOSED'; result = resultado realizado ao fechar
-  (closed_on). result_mode indica como o resultado é medido.
+  (closed_on), BRUTO: sem custos nem IR. O CRV tinha um modo de resultado líquido (x 0,9996) e o
+  removeu em 25/09/2026: result_mode não existe mais e o que já estava gravado, aqui e nos
+  movimentos, não foi recalculado. Resultados antigos podem trazer esse fator (0,04%), sem como
+  distingui-los.
 - position_movements: extrato de cada posição (OPEN, INCREASE, DECREASE, ADJUSTMENT) com
   result do movimento e custo médio resultante.
 - dividends: proventos recebidos; kind 'DIVIDENDO', 'JCP' ou 'ALUGUEL'; amount na moeda do ativo;
-  payment_date.
+  payment_date. Opcionais (nulos quando não informados): com_date, quotas, amount_per_share e o
+  retrato do dia do pagamento (invested_total, market_total, average_price, quoted_price).
+  yield_on_cost e dividend_yield ficam em PONTOS PERCENTUAIS (0,42 = 0,42%, não 42%); nos
+  importados são deste pagamento: amount sobre o investido e sobre o valor de mercado.
 - option_*: opções (contratos, vencimentos, posições, movimentos, cotações).
 - Valores monetários na moeda do ticker/carteira; não some BRL com USD.""",
 }
