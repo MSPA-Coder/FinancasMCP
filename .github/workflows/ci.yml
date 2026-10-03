@@ -44,11 +44,8 @@ jobs:
         run: python -m uv sync --locked --extra dev --python "$(command -v python)"
       - name: Ruff
         run: .venv/bin/python -m ruff check .
-      # Os testes marcados `banco_local` (18 casos) exercitam os bancos de teste do
-      # CB e do CRV e precisam do `~/.financas-mcp/config.toml` da maquina do
-      # mantenedor. Os dois repositorios sao publicos, mas a CI ainda nao monta os
-      # esquemas a partir deles; por isso rodam localmente, antes de cada PR que
-      # mexe em `server.py` ou `dominio.py`. Aqui roda o que nao depende de banco.
+      # Aqui roda o que nao depende de banco, em segundos. Os testes marcados
+      # `banco_local` rodam no job "Testes com banco", logo abaixo.
       - name: Testes (sem banco)
         run: .venv/bin/python -m pytest -q -m "not banco_local"
       # O Dependabot avisa de versao nova; esta etapa responde outra pergunta:
@@ -57,3 +54,50 @@ jobs:
       # sai por `--ignore-vuln <ID>` com comentario dizendo por que.
       - name: Auditar dependencias instaladas (CVE conhecido)
         run: .venv/bin/pip-audit --progress-spinner=off --skip-editable
+
+  # As consultas daqui leem as tabelas do CB e do CRV, que mudam sem este
+  # repositorio saber: em 24/09/2026 a `crv_carteira` quebrou em producao porque
+  # uma revisao do CRV removeu uma coluna. Este job sobe os dois a partir do
+  # `main` de cada um, pelos proprios Compose, com o esquema que as migracoes
+  # deles produzem, cria dados minimos (`tests/ci/`) e roda a suite inteira. Os
+  # dois sao publicos: nenhum token entra aqui. Com o cron de segunda-feira, uma
+  # quebra de esquema la reprova aqui em ate uma semana, antes de alguem notar
+  # pelo Claude.
+  banco:
+    name: Testes com banco
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Baixar o CB (main)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: MSPA-Coder/sistema-financeiro
+          path: _sistemas/cb
+          persist-credentials: false
+      - name: Baixar o CRV (main)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: MSPA-Coder/ControleRendaVariavel
+          path: _sistemas/crv
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.14"
+      - name: Instalar o uv
+        run: python -m pip install "uv==0.12.10"
+      - name: Instalar o projeto pelo lock
+        env:
+          UV_PYTHON_DOWNLOADS: never
+        run: python -m uv sync --locked --extra dev --python "$(command -v python)"
+      # Segredos efemeros, build, PostgreSQL, migracoes e semente de cada um. Os
+      # conteineres e as portas (5202 e 5302) sao os do Compose deles, os mesmos
+      # da maquina do mantenedor.
+      - name: Subir, migrar e semear o CB e o CRV
+        run: .venv/bin/python tests/ci/preparar_bancos.py _sistemas/cb _sistemas/crv
+      # O mesmo comando que o mantenedor roda na maquina dele: cria o
+      # `mcp_leitura` com SELECT so em `dominio.TABELAS` e grava o config.toml.
+      - name: Criar o usuario de leitura
+        run: .venv/bin/python -m financas_mcp.usuario_leitura local
+      - name: Testes (todos, com banco)
+        run: .venv/bin/python -m pytest -q
