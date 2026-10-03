@@ -1,8 +1,10 @@
 """Servidor MCP somente leitura sobre CB e CRV.
 
-Ferramentas prontas (cb_*, crv_*) fazem as contas no banco, com as regras
-de cada domínio; `esquema` e `sql` cobrem o resto. Tudo passa por
-`Conexoes.consultar`, que abre transação READ ONLY com o usuário de leitura.
+Ferramentas prontas (cb_*, crv_*) consultam as views do esquema `leitura`, que
+cada sistema publica com as regras do próprio domínio (status efetivo, saldo,
+preço que vale); `esquema` e `sql` cobrem o resto. Nenhuma regra é reescrita
+aqui, e nenhuma tabela dos sistemas é lida. Tudo passa por `Conexoes.consultar`,
+que abre transação READ ONLY com o usuário de leitura.
 """
 
 from __future__ import annotations
@@ -40,20 +42,6 @@ def _inicio_do_ano() -> date:
     return date(date.today().year, 1, 1)
 
 
-# Expressões do CB reutilizadas: a data e o valor que valem para cada lançamento.
-_DATA_REF = "case when e.status = 'realizado' then e.realized_date else e.due_date end"
-_VALOR_REF = "case when e.status = 'realizado' then coalesce(e.realized_amount, e.entry_amount) else e.entry_amount end"
-# O `status` gravado só é normalizado quando alguém grava o lançamento: em aberto
-# com vencimento passado continua 'a_vencer' até lá. O CB compensa na leitura; aqui
-# o status que vale é derivado da data, como faz `cb_contas` em `vencido_em_aberto`.
-_STATUS_EFETIVO = (
-    "case when e.status = 'realizado' then 'realizado' "
-    "when e.due_date < current_date then 'vencidos' else 'a_vencer' end"
-)
-_SINAL = "case when e.entry_type = 'receita' then 1 else -1 end"
-_PROJECAO_DO_CARTAO = "coalesce(o.operation_key, '') ~ '^cartao-(estimativa|pagamento):'"
-
-
 # --- Genéricas ------------------------------------------------------------------
 
 
@@ -70,23 +58,27 @@ async def sistemas() -> dict:
 
 @mcp.tool(annotations=LEITURA)
 async def esquema(sistema: Sistema) -> dict:
-    """Tabelas e colunas liberadas de um sistema, com as regras para ler os dados certo.
+    """Views e colunas liberadas de um sistema, com as regras para ler os dados certo.
 
-    Chame antes de escrever SQL livre para aquele sistema.
+    Chame antes de escrever SQL livre para aquele sistema. As views são as do esquema
+    `leitura`, que o próprio sistema publica; cada uma traz a descrição.
     """
     resultado = await conexoes().consultar(
         sistema,
         """
-        select c.table_name, string_agg(c.column_name || ' ' || c.data_type, ', ' order by c.ordinal_position)
-        from information_schema.columns c
-        where c.table_schema = 'public' and c.table_name = any(%s)
-        group by c.table_name order by c.table_name
+        select c.relname, obj_description(c.oid, 'pg_class'),
+               string_agg(a.attname || ' ' || format_type(a.atttypid, a.atttypmod), ', ' order by a.attnum)
+        from pg_class c
+        join pg_namespace n on n.oid = c.relnamespace
+        join pg_attribute a on a.attrelid = c.oid and a.attnum > 0 and not a.attisdropped
+        where n.nspname = %s and c.relkind = 'v'
+        group by c.oid, c.relname order by c.relname
         """,
-        (list(dominio.TABELAS[sistema]),),
+        (dominio.ESQUEMA,),
     )
     return {
         "regras": dominio.REGRAS[sistema],
-        "tabelas": {tabela: colunas for tabela, colunas in resultado["linhas"]},
+        "views": {nome: {"descricao": descricao, "colunas": colunas} for nome, descricao, colunas in resultado["linhas"]},
     }
 
 
@@ -109,30 +101,19 @@ async def cb_contas() -> dict:
 
     Cartões de crédito aparecem com saldo negativo (fatura em aberto).
     """
-    return await conexoes().consultar("cb", f"""
-        select a.id, a.account_name as conta, ow.owner_name as titular, i.institution_name as instituicao,
-               a.currency as moeda, a.account_kind as tipo, a.initial_balance as saldo_inicial,
-               a.initial_balance_date as data_saldo_inicial,
-               a.initial_balance + coalesce(sum({_SINAL} * {_VALOR_REF})
-                   filter (where e.status = 'realizado' and e.realized_date <= current_date), 0) as saldo_realizado_hoje,
-               coalesce(sum({_SINAL} * e.entry_amount)
-                   filter (where e.status <> 'realizado' and e.due_date < current_date), 0) as vencido_em_aberto,
-               a.initial_balance + coalesce(sum({_SINAL} * {_VALOR_REF}), 0) as saldo_com_todo_previsto,
-               max(e.due_date) filter (where e.status <> 'realizado') as ultimo_vencimento_previsto
-        from financial_account a
-        join account_owner ow on ow.id = a.owner_id
-        join financial_institution i on i.id = a.institution_id
-        left join cash_flow_entry e on e.account_id = a.id
-        group by a.id, ow.owner_name, i.institution_name
-        order by a.account_kind, ow.owner_name, a.account_name
+    return await conexoes().consultar("cb", """
+        select id, conta, titular, instituicao, moeda, tipo, saldo_inicial, data_saldo_inicial,
+               saldo_realizado_hoje, vencido_em_aberto, saldo_com_todo_previsto, ultimo_vencimento_previsto
+        from leitura.conta
+        order by tipo, titular, conta
     """)
 
 
 _GRUPOS_CB = {
-    "categoria": "c.category_name",
-    "conta": "a.account_name",
-    "tipo": "e.entry_type",
-    "categoria_e_conta": "c.category_name || ' | ' || a.account_name",
+    "categoria": "l.categoria",
+    "conta": "l.conta",
+    "tipo": "l.tipo",
+    "categoria_e_conta": "l.categoria || ' | ' || l.conta",
 }
 
 
@@ -156,22 +137,19 @@ async def cb_resumo_mensal(
     inicio_d = _data(inicio, _inicio_do_ano())
     fim_d = _data(fim, hoje if visao == "realizado" else date(hoje.year, 12, 31))
     filtro_visao = {
-        "realizado": "e.status = 'realizado'",
+        "realizado": "l.status = 'realizado'",
         "previsto": "true",
-        "em_aberto": "e.status <> 'realizado'",
+        "em_aberto": "l.status <> 'realizado'",
     }[visao]
     grupo = _GRUPOS_CB[agrupar]
     return await conexoes().consultar("cb", f"""
-        select to_char({_DATA_REF}, 'YYYY-MM') as mes, {grupo} as grupo, a.currency as moeda,
-               e.entry_type as tipo, sum({_VALOR_REF}) as total, count(*) as lancamentos
-        from cash_flow_entry e
-        join cash_flow_category c on c.id = e.category_id
-        join financial_account a on a.id = e.account_id
-        left join bank_operation o on o.id = e.bank_operation_id
+        select to_char(l.data, 'YYYY-MM') as mes, {grupo} as grupo, l.moeda,
+               l.tipo, sum(l.valor) as total, count(*) as lancamentos
+        from leitura.lancamento l
         where {filtro_visao}
-          and {_DATA_REF} between %(inicio)s and %(fim)s
-          and (%(gerenciais)s = false or c.kind = 'gerencial')
-          and (%(conta)s::int is null or e.account_id = %(conta)s::int)
+          and l.data between %(inicio)s and %(fim)s
+          and (%(gerenciais)s = false or l.natureza = 'gerencial')
+          and (%(conta)s::int is null or l.conta_id = %(conta)s::int)
         group by 1, 2, 3, 4
         order by 1, 4, total desc
     """, {"inicio": inicio_d, "fim": fim_d, "gerenciais": somente_gerenciais, "conta": conta_id})
@@ -197,26 +175,20 @@ async def cb_lancamentos(
     com vencimento anterior a hoje é 'vencidos', mesmo que o CB ainda o guarde como
     'a_vencer'.
     """
-    return await conexoes().consultar("cb", f"""
-        select e.id, {_DATA_REF} as data, {_STATUS_EFETIVO} as status, e.entry_type as tipo, {_VALOR_REF} as valor,
-               e.description as descricao, c.category_name as categoria, c.kind as natureza,
-               a.account_name as conta, a.currency as moeda,
-               case when e.installments > 1 then e.current_installment || '/' || e.installments end as parcela,
-               e.is_recurring as recorrente, {_PROJECAO_DO_CARTAO} as estimativa_de_fatura,
-               e.due_date as vencimento, e.realized_date as realizado_em
-        from cash_flow_entry e
-        join cash_flow_category c on c.id = e.category_id
-        join financial_account a on a.id = e.account_id
-        left join bank_operation o on o.id = e.bank_operation_id
-        where (%(texto)s::text is null or e.description ilike '%%' || %(texto)s::text || '%%')
-          and (%(inicio)s::date is null or {_DATA_REF} >= %(inicio)s::date)
-          and (%(fim)s::date is null or {_DATA_REF} <= %(fim)s::date)
-          and (%(conta)s::int is null or e.account_id = %(conta)s::int)
-          and (%(categoria)s::text is null or c.category_name = %(categoria)s::text)
-          and (%(status)s = 'todos' or {_STATUS_EFETIVO} = %(status)s)
-          and (%(tipo)s = 'todos' or e.entry_type = %(tipo)s)
-          and (%(gerenciais)s = false or c.kind = 'gerencial')
-        order by {_DATA_REF} desc, e.id desc
+    return await conexoes().consultar("cb", """
+        select l.id, l.data, l.status, l.tipo, l.valor, l.descricao, l.categoria, l.natureza,
+               l.conta, l.moeda, l.parcela, l.recorrente, l.estimativa_de_fatura,
+               l.vencimento, l.realizado_em
+        from leitura.lancamento l
+        where (%(texto)s::text is null or l.descricao ilike '%%' || %(texto)s::text || '%%')
+          and (%(inicio)s::date is null or l.data >= %(inicio)s::date)
+          and (%(fim)s::date is null or l.data <= %(fim)s::date)
+          and (%(conta)s::int is null or l.conta_id = %(conta)s::int)
+          and (%(categoria)s::text is null or l.categoria = %(categoria)s::text)
+          and (%(status)s = 'todos' or l.status = %(status)s)
+          and (%(tipo)s = 'todos' or l.tipo = %(tipo)s)
+          and (%(gerenciais)s = false or l.natureza = 'gerencial')
+        order by l.data desc, l.id desc
     """, {
         "texto": texto, "inicio": inicio, "fim": fim, "conta": conta_id, "categoria": categoria,
         "status": status, "tipo": tipo, "gerenciais": somente_gerenciais,
@@ -227,10 +199,9 @@ async def cb_lancamentos(
 async def cb_categorias() -> dict:
     """Categorias do CB com natureza e quantos lançamentos cada uma tem."""
     return await conexoes().consultar("cb", """
-        select c.id, c.category_name as categoria, c.kind as natureza, count(e.id) as lancamentos,
-               min(coalesce(e.realized_date, e.due_date)) as primeiro, max(coalesce(e.realized_date, e.due_date)) as ultimo
-        from cash_flow_category c left join cash_flow_entry e on e.category_id = c.id
-        group by c.id order by c.kind, c.category_name
+        select id, categoria, natureza, lancamentos, primeiro, ultimo
+        from leitura.categoria
+        order by natureza, categoria
     """)
 
 
@@ -245,25 +216,23 @@ async def cb_orcamento(ano: int | None = None, mes: int | None = None) -> dict:
     mes = mes or hoje.month
     return await conexoes().consultar("cb", """
         with gasto as (
-            select e.category_id, sum(coalesce(e.realized_amount, e.entry_amount)) as realizado
-            from cash_flow_entry e
-            join financial_account a on a.id = e.account_id
-            join cash_flow_category c on c.id = e.category_id
-            where e.status = 'realizado' and e.entry_type = 'despesa' and a.currency = 'BRL'
-              and c.kind = 'gerencial'
-              and e.realized_date >= make_date(%(ano)s, %(mes)s, 1)
-              and e.realized_date < make_date(%(ano)s, %(mes)s, 1) + interval '1 month'
+            select l.categoria_id, sum(l.valor) as realizado
+            from leitura.lancamento l
+            where l.status = 'realizado' and l.tipo = 'despesa' and l.moeda = 'BRL'
+              and l.natureza = 'gerencial'
+              and l.realizado_em >= make_date(%(ano)s, %(mes)s, 1)
+              and l.realizado_em < make_date(%(ano)s, %(mes)s, 1) + interval '1 month'
             group by 1
         ), meta as (
-            select category_id, sum(planned_amount) as planejado
-            from monthly_budget where year = %(ano)s and month = %(mes)s and active
+            select categoria_id, sum(planejado) as planejado
+            from leitura.orcamento_mensal where ano = %(ano)s and mes = %(mes)s and ativo
             group by 1
         )
-        select c.category_name as categoria, m.planejado, coalesce(g.realizado, 0) as realizado,
+        select c.categoria, m.planejado, coalesce(g.realizado, 0) as realizado,
                m.planejado - coalesce(g.realizado, 0) as disponivel
-        from cash_flow_category c
-        left join meta m on m.category_id = c.id
-        left join gasto g on g.category_id = c.id
+        from leitura.categoria c
+        left join meta m on m.categoria_id = c.id
+        left join gasto g on g.categoria_id = c.id
         where m.planejado is not null or g.realizado is not null
         order by m.planejado is null, coalesce(g.realizado, 0) desc
     """, {"ano": ano, "mes": mes})
@@ -278,28 +247,27 @@ async def cb_faturas() -> dict:
     """
     c = conexoes()
     importadas = await c.consultar("cb", """
-        select a.account_name as cartao, b.id as importacao, b.source_filename as arquivo,
-               b.created_at::date as importada_em,
-               sum(-l.amount) filter (where l.amount < 0) as compras,
-               sum(l.amount) filter (where l.amount > 0 and l.description !~* '^pag(amentos?)?\\y') as creditos,
-               sum(l.amount) filter (where l.amount > 0 and l.description ~* '^pag(amentos?)?\\y') as pagamentos,
-               min(l.statement_date) as primeira_linha, max(l.statement_date) as ultima_linha
-        from bank_statement_import b
-        join financial_account a on a.id = b.account_id and a.account_kind = 'cartao_credito'
-        join bank_statement_line l on l.import_id = b.id
-        group by a.account_name, b.id order by a.account_name, b.id desc
+        select b.conta as cartao, b.id as importacao, b.arquivo, b.importada_em::date as importada_em,
+               sum(-l.valor) filter (where l.valor < 0) as compras,
+               sum(l.valor) filter (where l.valor > 0 and l.descricao !~* '^pag(amentos?)?\\y') as creditos,
+               sum(l.valor) filter (where l.valor > 0 and l.descricao ~* '^pag(amentos?)?\\y') as pagamentos,
+               min(l.data) as primeira_linha, max(l.data) as ultima_linha
+        from leitura.extrato_importacao b
+        join leitura.extrato_linha l on l.importacao_id = b.id
+        where b.tipo_conta = 'cartao_credito'
+        group by b.conta, b.id, b.arquivo, b.importada_em
+        order by b.conta, b.id desc
     """)
-    futuro = await c.consultar("cb", f"""
-        select a.account_name as cartao, to_char(e.due_date, 'YYYY-MM') as mes,
-               sum(e.entry_amount) filter (where e.entry_type = 'despesa' and e.operation_type = 'installment') as parcelas,
-               sum(e.entry_amount) filter (where e.entry_type = 'despesa' and o.operation_key like 'cartao-estimativa:%%') as gasto_estimado,
-               sum(e.entry_amount) filter (where e.entry_type = 'despesa' and e.operation_type <> 'installment'
-                                            and not {_PROJECAO_DO_CARTAO}) as outros,
-               sum(e.entry_amount) filter (where e.entry_type = 'receita') as pagamentos_previstos
-        from cash_flow_entry e
-        join financial_account a on a.id = e.account_id and a.account_kind = 'cartao_credito'
-        left join bank_operation o on o.id = e.bank_operation_id
-        where e.status <> 'realizado'
+    futuro = await c.consultar("cb", """
+        select l.conta as cartao, to_char(l.vencimento, 'YYYY-MM') as mes,
+               sum(l.valor_previsto) filter (where l.tipo = 'despesa' and l.tipo_operacao = 'installment') as parcelas,
+               sum(l.valor_previsto) filter (where l.tipo = 'despesa' and l.gasto_estimado_do_cartao) as gasto_estimado,
+               sum(l.valor_previsto) filter (where l.tipo = 'despesa' and l.tipo_operacao <> 'installment'
+                                              and not l.estimativa_de_fatura) as outros,
+               sum(l.valor_previsto) filter (where l.tipo = 'receita') as pagamentos_previstos
+        from leitura.lancamento l
+        join leitura.conta c on c.id = l.conta_id and c.tipo = 'cartao_credito'
+        where l.status <> 'realizado'
         group by 1, 2 order by 1, 2
     """)
     return {"importadas": importadas, "futuro": futuro}
@@ -312,17 +280,17 @@ async def cb_projecao_de_caixa(meses: int = 6) -> dict:
     Considera realizados pela data de realização e em aberto (inclusive vencidos) pelo
     vencimento, somando ao saldo inicial. Mostra onde e quando uma conta fica negativa.
     """
-    return await conexoes().consultar("cb", f"""
+    return await conexoes().consultar("cb", """
         with fins as (
-            select (date_trunc('month', current_date) + make_interval(months => n + 1) - interval '1 day')::date as fim
+            select (date_trunc('month', leitura.hoje()) + make_interval(months => n + 1) - interval '1 day')::date as fim
             from generate_series(0, %(meses)s) as n
         ), mov as (
-            select e.account_id, {_DATA_REF} as data, {_SINAL} * {_VALOR_REF} as valor from cash_flow_entry e
+            select l.conta_id, l.data, l.sinal * l.valor as valor from leitura.lancamento l
         )
-        select a.account_name as conta, a.currency as moeda, a.account_kind as tipo, f.fim as fim_do_mes,
-               a.initial_balance + coalesce((select sum(m.valor) from mov m where m.account_id = a.id and m.data <= f.fim), 0) as saldo
-        from financial_account a cross join fins f
-        order by a.account_kind, a.account_name, f.fim
+        select c.conta, c.moeda, c.tipo, f.fim as fim_do_mes,
+               c.saldo_inicial + coalesce((select sum(m.valor) from mov m where m.conta_id = c.id and m.data <= f.fim), 0) as saldo
+        from leitura.conta c cross join fins f
+        order by c.tipo, c.conta, f.fim
     """, {"meses": max(0, min(meses, 36))})
 
 
@@ -339,39 +307,12 @@ async def crv_carteira(incluir_simuladas: bool = False) -> dict:
     calcula o valor de desmonte. Moeda na coluna moeda: não some BRL com USD.
     """
     return await conexoes().consultar("crv", """
-        with abertas as (
-            select 'acao' as instrumento, p.portfolio_id, p.broker_id, t.symbol as ativo,
-                   null::text as objeto, null::numeric as strike, null::date as vencimento,
-                   t.market::text as mercado, t.currency as moeda, p.side, p.quantity, p.average_cost,
-                   coalesce(q.last_price, q.previous_close) as preco, q.observed_at as cotado_em,
-                   p.opened_on
-            from positions p
-            join tickers t on t.id = p.ticker_id
-            left join quotes q on q.ticker_id = p.ticker_id
-            union all
-            select 'opcao', op.portfolio_id, op.broker_id, t.symbol, obj.symbol, c.strike, v.exercise_date,
-                   t.market::text, t.currency, op.side, op.quantity, op.average_cost,
-                   coalesce(oq.last_price, oq.previous_close), oq.observed_at, op.opened_on
-            from option_positions op
-            join option_contracts c on c.id = op.contract_id
-            join tickers t on t.id = c.ticker_id
-            join tickers obj on obj.id = c.underlying_ticker_id
-            join option_expirations v on v.id = c.expiration_id
-            left join option_quotes oq on oq.contract_id = op.contract_id
-        )
-        select pf.name as carteira, pf.simulated as simulada, br.name as corretora, a.instrumento,
-               a.ativo, a.objeto, a.strike, a.vencimento, a.mercado, a.moeda, a.side as lado,
-               a.quantity as quantidade, a.average_cost as custo_medio,
-               a.quantity * a.average_cost as custo_total, a.preco, a.cotado_em,
-               case when a.side = 'BUY' then 1 else -1 end * a.quantity * a.preco as valor_mercado,
-               case when a.side = 'BUY' then 1 else -1 end * (a.preco - a.average_cost) * a.quantity
-                   as resultado_aberto,
-               a.opened_on as aberta_em
-        from abertas a
-        join portfolios pf on pf.id = a.portfolio_id
-        left join brokers br on br.id = a.broker_id
-        where a.quantity <> 0 and (%(simuladas)s or not pf.simulated)
-        order by a.moeda, a.instrumento, valor_mercado desc nulls last
+        select carteira, simulada, corretora, instrumento, ativo, objeto, strike, vencimento, mercado, moeda,
+               lado, quantidade, custo_medio, custo_total, preco, cotado_em, valor_mercado, resultado_aberto,
+               aberta_em
+        from leitura.posicao
+        where %(simuladas)s or not simulada
+        order by moeda, instrumento, valor_mercado desc nulls last
     """, {"simuladas": incluir_simuladas})
 
 
@@ -389,15 +330,15 @@ async def crv_proventos(
     inicio_d = _data(inicio, date(hoje.year - 1, hoje.month, 1))
     fim_d = _data(fim, hoje)
     grupo = {
-        "mes": "to_char(d.payment_date, 'YYYY-MM')",
-        "ativo": "t.symbol",
-        "mes_e_ativo": "to_char(d.payment_date, 'YYYY-MM') || ' ' || t.symbol",
-        "tipo": "d.kind::text",
+        "mes": "to_char(p.pago_em, 'YYYY-MM')",
+        "ativo": "p.ativo",
+        "mes_e_ativo": "to_char(p.pago_em, 'YYYY-MM') || ' ' || p.ativo",
+        "tipo": "p.tipo",
     }[agrupar]
     return await conexoes().consultar("crv", f"""
-        select {grupo} as grupo, t.currency as moeda, sum(d.amount) as total, count(*) as pagamentos
-        from dividends d join tickers t on t.id = d.ticker_id
-        where d.payment_date between %(inicio)s and %(fim)s
+        select {grupo} as grupo, p.moeda, sum(p.valor) as total, count(*) as pagamentos
+        from leitura.provento p
+        where p.pago_em between %(inicio)s and %(fim)s
         group by 1, 2 order by 1, 2
     """, {"inicio": inicio_d, "fim": fim_d})
 
@@ -408,23 +349,21 @@ async def crv_operacoes(
     fim: str | None = None,
     status: Literal["OPEN", "CLOSED", "todos"] = "CLOSED",
 ) -> dict:
-    """Operações do CRV (compra/venda), com resultado realizado das fechadas.
+    """Operações do CRV (compra/venda de ações e de opções), com resultado realizado das fechadas.
 
     Filtra pela data de fechamento (fechadas) ou de abertura (abertas). Padrão: ano corrente.
+    Nas operações de opção, e_opcao é verdadeiro, ativo é o código da opção e objeto, o ativo-objeto.
     """
     inicio_d = _data(inicio, _inicio_do_ano())
     fim_d = _data(fim, date.today())
     return await conexoes().consultar("crv", """
-        select tr.id, t.symbol as ativo, t.currency as moeda, tr.side as lado, tr.quantity as quantidade,
-               tr.average_cost as preco_entrada, tr.exit_price as preco_saida, tr.opened_on as aberta_em,
-               tr.closed_on as fechada_em, tr.status, tr.result as resultado, pf.name as carteira,
-               pf.simulated as simulada, tr.notes as notas
-        from transactions tr
-        join tickers t on t.id = tr.ticker_id
-        left join portfolios pf on pf.id = tr.portfolio_id
-        where (%(status)s = 'todos' or tr.status::text = %(status)s)
-          and coalesce(tr.closed_on, tr.opened_on) between %(inicio)s and %(fim)s
-        order by coalesce(tr.closed_on, tr.opened_on) desc
+        select o.id, o.ativo, o.objeto, o.e_opcao, o.moeda, o.lado, o.quantidade,
+               o.preco_de_entrada as preco_entrada, o.preco_de_saida as preco_saida, o.aberta_em,
+               o.fechada_em, o.status, o.resultado, o.carteira, o.simulada, o.notas
+        from leitura.operacao o
+        where (%(status)s = 'todos' or o.status = %(status)s)
+          and coalesce(o.fechada_em, o.aberta_em) between %(inicio)s and %(fim)s
+        order by coalesce(o.fechada_em, o.aberta_em) desc
     """, {"inicio": inicio_d, "fim": fim_d, "status": status})
 
 

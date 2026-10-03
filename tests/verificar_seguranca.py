@@ -1,5 +1,6 @@
 """Confere, no ambiente configurado (produção inclusive), que o BANCO recusa escrita
-e esconde as tabelas sensíveis mesmo com a barreira do servidor contornada.
+e esconde toda tabela dos sistemas (só as views do esquema `leitura` são legíveis)
+mesmo com a barreira do servidor contornada.
 
     FINANCAS_MCP_AMBIENTE=producao .venv/Scripts/python.exe tests/verificar_seguranca.py
 
@@ -15,11 +16,15 @@ from financas_mcp.conexao import Conexoes, ConsultaRecusada
 from financas_mcp.config import carregar
 
 TENTATIVAS = {
-    "cb": ["update cash_flow_entry set entry_amount = entry_amount where false",
-           "delete from cash_flow_entry where false", "create table invasora (id int)",
-           "select count(*) from app_user", "select count(*) from audit_log", "select count(*) from app_setting"],
-    "crv": ["update positions set quantity = quantity where false", "select count(*) from users",
-            "select count(*) from app_settings"],
+    "cb": ["update leitura.operacao set status = status where false",
+           "delete from leitura.operacao where false", "create table invasora (id int)",
+           "create table leitura.invasora (id int)",
+           "select count(*) from public.cash_flow_entry", "select count(*) from public.app_user",
+           "select count(*) from public.audit_log", "select count(*) from public.app_setting"],
+    "crv": ["update leitura.operacao set status = status where false",
+            "create table leitura.invasora (id int)",
+            "select count(*) from public.positions", "select count(*) from public.users",
+            "select count(*) from public.app_settings"],
 }
 
 

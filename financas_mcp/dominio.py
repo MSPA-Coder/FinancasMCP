@@ -1,26 +1,31 @@
 """O que cada sistema libera para leitura e como ler os dados sem errar.
 
-`TABELAS` é a fonte única da lista de tabelas: o script que cria o usuário
-de leitura (`python -m financas_mcp.usuario_leitura`) dá SELECT exatamente
-nelas. Ficam de fora usuários, senhas, sessões, permissões e auditoria.
+O servidor não lê as tabelas dos sistemas: lê as views do esquema `leitura`, que
+o CB e o CRV publicam pelas próprias migrações e que carregam as regras do
+domínio (status efetivo, saldo, preço que vale, sinal da posição vendida). Assim
+uma mudança de schema que quebraria este servidor reprova na suíte de quem
+mudou, e uma regra que muda lá muda aqui sem reescrever SQL.
+
+`VIEWS` é a fonte única da lista: o script que cria o usuário de leitura
+(`python -m financas_mcp.usuario_leitura`) dá SELECT em todo o esquema `leitura`
+e confere que estas views existem. Ficam de fora usuários, senhas, sessões,
+permissões e auditoria, que não têm view.
 """
 
 from __future__ import annotations
 
-TABELAS: dict[str, tuple[str, ...]] = {
+ESQUEMA = "leitura"
+
+VIEWS: dict[str, tuple[str, ...]] = {
     "cb": (
-        "account_owner", "financial_institution", "financial_account",
-        "cash_flow_category", "cash_flow_entry", "bank_operation",
-        "account_month_close", "monthly_budget",
-        "management_tag", "cash_flow_entry_tag", "management_project", "cash_flow_entry_project",
-        "bank_statement_import", "bank_statement_line", "entry_attachment",
+        "lancamento", "conta", "categoria", "orcamento_mensal", "operacao",
+        "extrato_importacao", "extrato_linha", "fechamento_mes",
+        "lancamento_etiqueta", "lancamento_projeto",
     ),
     "crv": (
-        "brokers", "tickers", "portfolios", "portfolio_tickers",
-        "positions", "position_movements", "position_ledger_archive",
-        "transactions", "dividends", "quotes", "quote_history",
-        "option_contracts", "option_expirations", "option_positions",
-        "option_position_movements", "option_quotes",
+        "posicao", "operacao", "provento", "cotacao", "cotacao_historico", "opcao", "cotacao_opcao",
+        "movimento_posicao", "movimento_opcao", "posicao_historica",
+        "ativo", "carteira", "corretora", "carteira_ativo",
     ),
 }
 
@@ -31,63 +36,56 @@ NOMES = {
 
 REGRAS: dict[str, str] = {
     "cb": """\
-ControleBancario -- regras para ler certo:
-- cash_flow_entry: valores SEMPRE positivos (entry_amount, realized_amount); o sinal vem de
-  entry_type ('receita' soma, 'despesa' subtrai).
-- status: 'a_vencer' (futuro), 'vencidos' (em aberto e já vencido), 'realizado' (pago/recebido).
-  Realizado tem realized_date e realized_amount (use estes); em aberto use due_date e entry_amount.
-- Categorias (cash_flow_category.kind): 'gerencial' = receita/despesa de verdade;
-  'transferencia' = movimento entre contas próprias (NÃO é gasto nem renda, tem as duas pontas
-  ligadas por source_entry_id); 'movimentacao' = aporte/resgate de investimento (sai do caixa,
-  mas não é despesa). Análise de gastos/renda: só kind='gerencial'.
-- Saldo de uma conta = financial_account.initial_balance + soma assinada dos lançamentos dela a
-  partir da data inicial do sistema (configuração do CB, hoje 2026-01-01; não há lançamento antes
-  dela). initial_balance_date não entra na conta. Saldo realizado até hoje: só
-  status='realizado' com realized_date <= hoje, somando realized_amount.
-- Moeda é da conta (financial_account.currency: BRL ou USD). Nunca some moedas diferentes.
-- Cartão de crédito: financial_account.account_kind='cartao_credito'. Compras são despesas na
-  conta do cartão; saldo negativo = fatura em aberto. Pagar a fatura é transferência de uma conta
-  comum para o cartão. card_closing_day/card_due_day = fechamento/vencimento.
-- Aplicação: financial_account.account_kind='aplicacao' (CDB, caixinha, Tesouro). Para o saldo é
-  uma conta comum, sem dado de cartão; aplicar e resgatar são transferências. Os demais tipos são
-  'conta' (conta comum) e 'cartao_credito'. O CB agrupa as contas em Bancos ('conta' em
-  instituição tipo 'Banco'), Corretoras ('conta' em 'Corretora'), Cartões e Aplicações.
-- Fatura projetada: lançamentos cuja bank_operation.operation_key começa com
-  'cartao-estimativa:' (gasto estimado pela mediana) ou 'cartao-pagamento:' (pagamento projetado).
-  São estimativas, não fatos.
-- bank_operation agrupa parcelas (operation_type='installment', installments/current_installment),
-  recorrências (is_recurring) e transferências. Recorrências são projetadas até o horizonte de
-  Parâmetros (6 meses); parcelas vêm todas.
-- bank_statement_line: linhas importadas de extratos/faturas. Nas faturas de cartão há
-  purchase_date, installment_current/total, card_holder e bank_category (categoria do banco).
-  matched_entry_id liga a linha ao lançamento conciliado; import_id liga ao bank_statement_import
-  (cada importação de cartão é uma fatura).
-- monthly_budget: orçamento (meta) por categoria, ano e mês, em moeda base (BRL).
-- account_month_close: meses fechados por conta (não mudam mais sem reabertura).
-- Lançamentos com realized_date/due_date antes de 2026-01-01 não existem: o sistema começa em
-  31/12/2025 (saldos iniciais nessa data).""",
+ControleBancario -- só existem as views do esquema `leitura` (o caminho de busca já aponta para
+ele: `select * from lancamento` e `select * from leitura.lancamento` são a mesma coisa). Cada view
+traz a descrição dela; as regras abaixo são as que atravessam várias.
+- leitura.lancamento: valores SEMPRE positivos (valor, valor_previsto); o sinal vem de `tipo`
+  ('receita' soma, 'despesa' subtrai) ou da coluna `sinal` (+1/-1). `status` é o EFETIVO:
+  'realizado', 'vencidos' (em aberto e já vencido) ou 'a_vencer'; `status_gravado` é o que está
+  guardado e pode estar desatualizado. `data` e `valor` já são os que valem: realização e valor
+  realizado nos realizados, vencimento e valor previsto nos em aberto.
+- Categorias (`natureza`): 'gerencial' = receita/despesa de verdade; 'transferencia' = movimento
+  entre contas próprias (NÃO é gasto nem renda); 'movimentacao' = aporte/resgate de investimento
+  (sai do caixa, mas não é despesa). Análise de gastos/renda: só natureza = 'gerencial'.
+- leitura.conta: saldo_realizado_hoje = saldo inicial + realizados até hoje; saldo_com_todo_previsto
+  inclui tudo o que está previsto; vencido_em_aberto é a soma assinada do que venceu e não foi
+  pago. A data de hoje é `leitura.hoje()` (fuso de São Paulo). Moeda é da conta: BRL ou USD, e
+  moedas diferentes nunca se somam.
+- Cartão de crédito: conta.tipo = 'cartao_credito'. Compras são despesas na conta do cartão;
+  saldo negativo = fatura em aberto. Pagar a fatura é transferência de uma conta comum para o
+  cartão. 'aplicacao' (CDB, caixinha, Tesouro) é para o saldo uma conta comum.
+- Fatura projetada: lancamento.estimativa_de_fatura = true marca gasto estimado pela mediana
+  (gasto_estimado_do_cartao) ou pagamento projetado. São estimativas, não fatos.
+- leitura.operacao agrupa parcelas, recorrências e transferências. Recorrências são projetadas até
+  o horizonte de Parâmetros (6 meses); parcelas vêm todas.
+- leitura.extrato_linha: linhas importadas de extratos e faturas (valor com sinal: negativo é
+  saída). Em cartão, cada leitura.extrato_importacao é uma fatura; lancamento_conciliado_id liga
+  a linha ao lançamento.
+- leitura.orcamento_mensal: meta por categoria, ano e mês, em BRL; só `ativo` vale.
+- leitura.fechamento_mes: meses fechados por conta (não mudam sem reabertura).
+- O sistema começa em 31/12/2025: não há lançamento anterior a 2026-01-01.""",
     "crv": """\
-ControleRendaVariavel -- regras para ler certo:
-- positions: posições abertas em ações (quantity, average_cost, side 'BUY' comprada / 'SELL'
-  vendida); uma por (carteira, corretora, ativo, lado). portfolio_id -> portfolios (simulated=true
-  é carteira simulada: exclua de análises reais). Opções abertas ficam em option_positions --
-  a carteira completa são as duas tabelas.
-- tickers: symbol, market ('B3','NYSE','NASDAQ'), currency. Enums guardam o NOME em maiúsculas. quotes: última cotação por ticker
-  (last_price, previous_close, observed_at). quote_history: série histórica.
-- transactions: operações; status 'OPEN'/'CLOSED'; result = resultado realizado ao fechar
-  (closed_on), BRUTO: sem custos nem IR. O CRV tinha um modo de resultado líquido (x 0,9996) e o
-  removeu em 25/09/2026: result_mode não existe mais e o que já estava gravado, aqui e nos
-  movimentos, não foi recalculado. Resultados antigos podem trazer esse fator (0,04%), sem como
-  distingui-los.
-- position_movements: extrato de cada posição (OPEN, INCREASE, DECREASE, ADJUSTMENT) com
-  result do movimento e custo médio resultante.
-- dividends: proventos recebidos; kind 'DIVIDENDO', 'JCP' ou 'ALUGUEL'; amount na moeda do ativo;
-  payment_date. Opcionais (nulos quando não informados): com_date, quotas, amount_per_share e o
-  retrato do dia do pagamento (invested_total, market_total, average_price, quoted_price).
+ControleRendaVariavel -- só existem as views do esquema `leitura` (o caminho de busca já aponta
+para ele). Cada view traz a descrição dela; as regras abaixo são as que atravessam várias.
+- leitura.posicao: posições ABERTAS de ações e opções juntas (instrumento 'acao' ou 'opcao'; a
+  opção traz objeto, strike e vencimento). lado 'BUY' é comprada e 'SELL' é vendida. `preco` é a
+  última cotação, ou o fechamento anterior quando não há; valor_mercado = quantidade x preco,
+  negativo na posição vendida. `simulada` = true é carteira simulada: exclua de análises reais.
+- Ativos: `mercado` é 'B3', 'NYSE' ou 'NASDAQ'; `moeda` vem do ativo. Valores monetários na moeda
+  do ativo ou da carteira; não some BRL com USD.
+- leitura.cotacao: última cotação por ativo (cotado_em mostra a idade do dado);
+  leitura.cotacao_historico: a série diária.
+- leitura.operacao: compras e vendas, de ações e de opções (e_opcao); status 'OPEN' ou 'CLOSED';
+  `resultado` = realizado ao fechar, BRUTO: sem custos nem IR. O CRV tinha um modo de resultado
+  líquido (x 0,9996) e o removeu em 25/09/2026: o que já estava gravado, aqui e nos movimentos, não
+  foi recalculado. Resultados antigos podem trazer esse fator (0,04%), sem como distingui-los.
+- leitura.movimento_posicao / movimento_opcao: extrato de cada posição (OPEN, INCREASE, DECREASE,
+  ADJUSTMENT) com o resultado do movimento e o custo médio resultante.
+- leitura.provento: proventos recebidos; tipo 'DIVIDENDO', 'JCP' ou 'ALUGUEL'; valor na moeda do
+  ativo; pago_em. Opcionais (nulos quando não informados): data_com, cotas, valor_por_cota e o
+  retrato do dia do pagamento (investido, valor_de_mercado, preco_medio, preco_cotado).
   yield_on_cost e dividend_yield ficam em PONTOS PERCENTUAIS (0,42 = 0,42%, não 42%); nos
-  importados são deste pagamento: amount sobre o investido e sobre o valor de mercado.
-- option_*: opções (contratos, vencimentos, posições, movimentos, cotações).
-- Valores monetários na moeda do ticker/carteira; não some BRL com USD.""",
+  importados são deste pagamento: valor sobre o investido e sobre o valor de mercado.""",
 }
 
 INSTRUCOES = """\
@@ -96,10 +94,11 @@ cb = ControleBancario, crv = ControleRendaVariavel.
 
 Como trabalhar:
 1. Prefira as ferramentas prontas (cb_*, crv_*): as somas já saem certas.
-2. Para o que elas não cobrem, chame `esquema(sistema)` uma vez para ver tabelas, colunas e as
-   regras de leitura, e depois `sql(sistema, consulta)` com um SELECT.
-3. Respeite as regras: no CB, gasto/renda só com categorias kind='gerencial'; transferências
-   entre contas próprias não são gasto; valores são positivos e o tipo dá o sinal; não some
-   moedas diferentes.
+2. Para o que elas não cobrem, chame `esquema(sistema)` uma vez para ver as views, as colunas e as
+   regras de leitura, e depois `sql(sistema, consulta)` com um SELECT sobre as views do esquema
+   `leitura`. As tabelas dos sistemas não são lidas diretamente.
+3. Respeite as regras: no CB, gasto/renda só com natureza 'gerencial'; transferências entre
+   contas próprias não são gasto; valores são positivos e o tipo dá o sinal; não some moedas
+   diferentes.
 4. Datas no formato AAAA-MM-DD. Valores em texto decimal exato (ex.: "1234.56").
 Nada aqui altera dados: para mudar algo, o usuário usa as telas dos sistemas."""
