@@ -80,6 +80,12 @@ Os testes confirmam que o próprio banco recusa escrita e esconde as tabelas
 sensíveis mesmo com a barreira do servidor contornada. O `cliente_stdio.py`
 sobe o servidor como o Claude Desktop e imprime só contagens, nunca valores.
 
+Na CI, o job "Testes com banco" sobe o CB e o CRV a partir do `main` de cada
+um, pelos próprios Compose, cria dados mínimos (`tests/ci/`) e roda a suíte
+inteira, em cada PR e toda segunda-feira. O saldo do cartão Carbon é conferido
+dos dois lados: a semente o calcula pela função das telas do CB, e o teste,
+pelo SQL do MCP.
+
 ## Depois de implantar o CB ou o CRV
 
 ```powershell
@@ -90,7 +96,9 @@ Chama cada ferramenta uma vez, só leitura, e sai com código 1 se alguma
 quebrar ou se uma tabela liberada em `dominio.TABELAS` sumir. As consultas
 daqui dependem do schema de dois sistemas que mudam sem este repositório
 saber: em 24/09/2026 a `crv_carteira` estava quebrada em produção porque uma
-revisão do CRV removeu uma coluna, e nada avisou. A CI deste repositório roda
-só os testes sem banco, e o VPS não alcança o Windows, então o passo é manual:
-rode logo depois do `deploy.sh` desses dois. Imprime só nomes e contagens, nunca
-valores.
+revisão do CRV removeu uma coluna, e nada avisou. Desde 03/10/2026, a CI daqui
+roda a suíte com banco contra o `main` do CB e do CRV toda segunda-feira, então
+uma quebra dessas aparece em até uma semana. Mas a CI testa o `main`, e a
+produção pode estar em outra versão. Como o VPS não alcança o Windows, este passo
+continua manual: rode logo depois do `deploy.sh` desses dois. Imprime só nomes e
+contagens, nunca valores.

@@ -6,8 +6,9 @@ sem banco; o resto exercita as ferramentas e, principalmente, confirma que o
 banco recusa escrita e esconde as tabelas sensíveis mesmo quando a barreira
 de cima é contornada.
 
-Os que precisam de banco levam `@pytest.mark.banco_local` e ficam fora da CI
-(`pytest -m "not banco_local"`); localmente rode a suíte inteira, sem filtro.
+Os que precisam de banco levam `@pytest.mark.banco_local`. Localmente rode a
+suíte inteira, sem filtro. Na CI, o job "Testes com banco" monta o CB e o CRV a
+partir do `main` de cada um, com os dados mínimos de `tests/ci/`, e roda todos.
 """
 
 from __future__ import annotations
@@ -108,6 +109,15 @@ def test_ferramenta_sql_recusa_escrita():
 # --- Ferramentas ---------------------------------------------------------------
 
 
+def _hoje_no_banco(sistema: str = "cb") -> date:
+    # O status efetivo sai do `current_date` do banco, no fuso dele (o PostgreSQL
+    # do CB roda em America/Sao_Paulo). A data do Python é a da máquina que roda a
+    # suíte, que pode estar em outro fuso: das 21h à meia-noite em São Paulo, um
+    # runner em UTC já está no dia seguinte.
+    linhas = rodar(server.conexoes().consultar(sistema, "select current_date"))["linhas"]
+    return date.fromisoformat(str(linhas[0][0]))
+
+
 def _ok(resultado, minimo=1):
     assert resultado["quantidade"] >= minimo, resultado
     assert not resultado["truncado"]
@@ -151,7 +161,7 @@ def test_status_efetivo_deriva_da_data_e_nao_do_status_gravado():
         order by e.due_date
     """))
     efetivo = {(g, v): s for g, v, s in resultado["linhas"]}
-    hoje = date.today()
+    hoje = _hoje_no_banco()
     dia = timedelta
     assert efetivo[("realizado", (hoje - dia(30)).isoformat())] == "realizado"
     assert efetivo[("a_vencer", (hoje - dia(1)).isoformat())] == "vencidos"
@@ -168,7 +178,7 @@ def test_filtro_de_status_dos_lancamentos_usa_o_efetivo():
     assert all(not r["truncado"] for r in por_status.values())
     parcial = sum(por_status[s]["quantidade"] for s in ("realizado", "a_vencer", "vencidos"))
     assert parcial == por_status["todos"]["quantidade"]
-    hoje = date.today().isoformat()
+    hoje = _hoje_no_banco().isoformat()
     for s in ("realizado", "a_vencer", "vencidos"):
         col = por_status[s]["colunas"].index("status")
         assert {linha[col] for linha in por_status[s]["linhas"]} <= {s}, s
@@ -181,7 +191,9 @@ def test_filtro_de_status_dos_lancamentos_usa_o_efetivo():
 @pytest.mark.banco_local
 def test_saldo_do_carbon_bate_com_o_do_sistema():
     # O cartão Carbon local tem saldo realizado conhecido (-10.656,92): a mesma conta
-    # que a tela de contas do CB mostra.
+    # que a tela de contas do CB mostra. Na CI, a semente do CB cria um Carbon com
+    # esse saldo e o confere pela função das telas do CB; aqui, o mesmo número sai
+    # do SQL do MCP.
     contas = rodar(server.cb_contas())
     i = contas["colunas"].index("saldo_realizado_hoje")
     j = contas["colunas"].index("conta")
