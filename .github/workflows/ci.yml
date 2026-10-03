@@ -55,14 +55,15 @@ jobs:
       - name: Auditar dependencias instaladas (CVE conhecido)
         run: .venv/bin/pip-audit --progress-spinner=off --skip-editable
 
-  # As consultas daqui leem as tabelas do CB e do CRV, que mudam sem este
-  # repositorio saber: em 24/09/2026 a `crv_carteira` quebrou em producao porque
-  # uma revisao do CRV removeu uma coluna. Este job sobe os dois a partir do
-  # `main` de cada um, pelos proprios Compose, com o esquema que as migracoes
-  # deles produzem, cria dados minimos (`tests/ci/`) e roda a suite inteira. Os
-  # dois sao publicos: nenhum token entra aqui. Com o cron de segunda-feira, uma
-  # quebra de esquema la reprova aqui em ate uma semana, antes de alguem notar
-  # pelo Claude.
+  # As consultas daqui leem as views do esquema `leitura` do CB e do CRV, que
+  # os dois publicam pelas proprias migracoes: em 24/09/2026 a `crv_carteira`
+  # quebrou em producao porque uma revisao do CRV removeu uma coluna que lia as
+  # tabelas direto. Este job sobe os dois a partir do `main` de cada um, pelos
+  # proprios Compose, com o esquema que as migracoes deles produzem (o esquema
+  # `leitura` inclusive), cria dados minimos (`tests/ci/`) e roda a suite
+  # inteira. Os dois sao publicos: nenhum token entra aqui. Uma mudanca de
+  # contrato que escape da suite do sistema que a fez reprova aqui no PR seguinte
+  # ou na segunda-feira.
   banco:
     name: Testes com banco
     runs-on: ubuntu-24.04
@@ -96,7 +97,8 @@ jobs:
       - name: Subir, migrar e semear o CB e o CRV
         run: .venv/bin/python tests/ci/preparar_bancos.py _sistemas/cb _sistemas/crv
       # O mesmo comando que o mantenedor roda na maquina dele: cria o
-      # `mcp_leitura` com SELECT so em `dominio.TABELAS` e grava o config.toml.
+      # `mcp_leitura` com SELECT so nas views do esquema `leitura` (e confere que
+      # as de `dominio.VIEWS` existem) e grava o config.toml.
       - name: Criar o usuario de leitura
         run: .venv/bin/python -m financas_mcp.usuario_leitura local
       - name: Testes (todos, com banco)

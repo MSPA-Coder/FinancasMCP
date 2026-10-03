@@ -9,11 +9,17 @@ ControleBancario (`cb`) e do ControleRendaVariavel (`crv`).
 - Em produção, abre um túnel SSH pela Tailscale até o VPS e fala com os bancos
   que escutam só em `127.0.0.1` de lá (portas 5202 e 5302). Nada novo fica
   exposto na internet.
-- Cada banco tem um usuário `mcp_leitura` com `SELECT` apenas nas tabelas
-  financeiras (`financas_mcp/dominio.py`, `TABELAS`) e
-  `default_transaction_read_only`. Usuários, senhas, sessões, permissões e
-  auditoria ficam de fora. Toda consulta roda numa transação `READ ONLY`, com
+- Cada banco tem um usuário `mcp_leitura` com `SELECT` apenas nas **views do
+  esquema `leitura`**, que o CB e o CRV publicam pelas próprias migrações
+  (`financas_mcp/dominio.py`, `VIEWS`), e `default_transaction_read_only`.
+  Nenhuma tabela dos sistemas é legível: usuários, senhas, sessões, permissões e
+  auditoria não têm view. Toda consulta roda numa transação `READ ONLY`, com
   tempo máximo e limite de linhas.
+- As regras do domínio (status efetivo do lançamento, saldo, o preço que vale, o
+  sinal da posição vendida) moram nas views, uma vez, e não são reescritas aqui.
+  O PostgreSQL recusa remover ou trocar o tipo de uma coluna que uma view lê, então
+  uma mudança de schema que quebraria este servidor reprova na suíte do sistema
+  que mudou, e não em produção.
 - As credenciais ficam fora do repositório, em `%USERPROFILE%\.financas-mcp\config.toml`.
 
 ## Ferramentas
@@ -21,8 +27,8 @@ ControleBancario (`cb`) e do ControleRendaVariavel (`crv`).
 | Ferramenta | O que devolve |
 |---|---|
 | `sistemas` | ambiente, data de hoje e sistemas disponíveis |
-| `esquema(sistema)` | tabelas, colunas e regras de leitura do domínio |
-| `sql(sistema, consulta)` | qualquer `SELECT`, até 2.000 linhas e 15 s |
+| `esquema(sistema)` | views, descrições, colunas e regras de leitura do domínio |
+| `sql(sistema, consulta)` | qualquer `SELECT` sobre as views, até 2.000 linhas e 15 s |
 | `cb_contas` | saldo realizado hoje, vencido em aberto e saldo com todo o previsto |
 | `cb_resumo_mensal` | receitas e despesas por mês e categoria/conta |
 | `cb_lancamentos` | lançamentos com filtros (texto, período, conta, categoria, status) |
@@ -32,7 +38,7 @@ ControleBancario (`cb`) e do ControleRendaVariavel (`crv`).
 | `cb_projecao_de_caixa` | saldo de cada conta no fim de cada mês |
 | `crv_carteira` | posições com custo, cotação e resultado aberto |
 | `crv_proventos` | dividendos, JCP e aluguel por mês, ativo ou tipo |
-| `crv_operacoes` | operações e resultado realizado |
+| `crv_operacoes` | operações de ações e de opções e resultado realizado |
 
 ## Instalação
 
@@ -51,8 +57,16 @@ py -3.14 -m uv sync --locked --extra dev
 ```
 
 `ambiente` no `config.toml` escolhe local ou produção; `FINANCAS_MCP_AMBIENTE`
-sobrepõe. Para liberar uma tabela nova, acrescente-a a `TABELAS` e rode o
-`usuario_leitura` de novo (ele troca a senha e reaplica as permissões).
+sobrepõe. Quando uma migração do CB ou do CRV acrescentar uma view ao esquema
+`leitura`, acrescente o nome dela a `VIEWS` e rode o `usuario_leitura` de novo
+(ele troca a senha e reaplica as permissões). O script confere antes de mexer em
+qualquer permissão: se o esquema ou alguma view esperada não existir no banco
+(o CB ou o CRV implantado é anterior ao contrato), ele para com uma mensagem.
+
+**Ordem ao adotar o esquema `leitura`:** primeiro implantar o CB e o CRV com o
+esquema; depois atualizar este repositório (`git pull`) e rodar o
+`usuario_leitura producao`; por fim reiniciar o Claude Desktop. Antes do segundo
+passo o servidor antigo continua lendo as tabelas.
 
 No Claude Desktop (`%APPDATA%\Claude\claude_desktop_config.json`):
 
@@ -76,8 +90,9 @@ No Claude Desktop (`%APPDATA%\Claude\claude_desktop_config.json`):
 $env:FINANCAS_MCP_AMBIENTE = "producao"; .\.venv\Scripts\python.exe tests\cliente_stdio.py
 ```
 
-Os testes confirmam que o próprio banco recusa escrita e esconde as tabelas
-sensíveis mesmo com a barreira do servidor contornada. O `cliente_stdio.py`
+Os testes confirmam que o próprio banco recusa escrita e esconde toda tabela dos
+sistemas (só as views de `leitura` são legíveis) mesmo com a barreira do servidor
+contornada. O `cliente_stdio.py`
 sobe o servidor como o Claude Desktop e imprime só contagens, nunca valores.
 
 Na CI, o job "Testes com banco" sobe o CB e o CRV a partir do `main` de cada
@@ -93,12 +108,11 @@ pelo SQL do MCP.
 ```
 
 Chama cada ferramenta uma vez, só leitura, e sai com código 1 se alguma
-quebrar ou se uma tabela liberada em `dominio.TABELAS` sumir. As consultas
-daqui dependem do schema de dois sistemas que mudam sem este repositório
-saber: em 24/09/2026 a `crv_carteira` estava quebrada em produção porque uma
-revisão do CRV removeu uma coluna, e nada avisou. Desde 03/10/2026, a CI daqui
-roda a suíte com banco contra o `main` do CB e do CRV toda segunda-feira, então
-uma quebra dessas aparece em até uma semana. Mas a CI testa o `main`, e a
-produção pode estar em outra versão. Como o VPS não alcança o Windows, este passo
-continua manual: rode logo depois do `deploy.sh` desses dois. Imprime só nomes e
-contagens, nunca valores.
+quebrar ou se uma view esperada em `dominio.VIEWS` sumir do esquema `leitura`.
+Em 24/09/2026 a `crv_carteira` estava quebrada em produção porque uma revisão do
+CRV removeu uma coluna que ela lia, e nada avisou. Com as views, essa quebra
+reprova na suíte do sistema que mudou. A CI daqui ainda roda a suíte com banco
+contra o `main` do CB e do CRV em cada PR e toda segunda-feira, mas a CI testa o
+`main`, e a produção pode estar em outra versão. Como o VPS não alcança o
+Windows, este passo continua manual: rode logo depois do `deploy.sh` desses dois.
+Imprime só nomes e contagens, nunca valores.

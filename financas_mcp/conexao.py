@@ -4,8 +4,9 @@ Os bancos de produção só escutam em 127.0.0.1 do VPS. Uma conexão SSH (pela
 Tailscale) abre um encaminhamento local para cada porta; o túnel é criado na
 primeira consulta e refeito se cair.
 
-A proteção de verdade é o usuário do banco: ele só tem SELECT nas tabelas
-financeiras e nasce com `default_transaction_read_only`. Aqui vão as camadas
+A proteção de verdade é o usuário do banco: ele só tem SELECT nas views do
+esquema `leitura` (nenhuma tabela) e nasce com `default_transaction_read_only`.
+Aqui vão as camadas
 de cima, para uma consulta errada falhar cedo e barata:
 
 - a transação é aberta como READ ONLY, com tempo máximo;
@@ -143,8 +144,13 @@ class Conexoes:
             colunas, linhas = await asyncio.to_thread(_executar, banco, porta, sql, parametros, limite)
         except psycopg.errors.InsufficientPrivilege as exc:
             raise ConsultaRecusada(
-                "Sem permissão: esta tabela não está liberada para leitura (usuários, senhas, sessões e "
-                f"auditoria ficam de fora). Veja `esquema('{sistema}')`."
+                "Sem permissão: só as views do esquema `leitura` estão liberadas para leitura (usuários, "
+                f"senhas, sessões e auditoria ficam de fora). Veja `esquema('{sistema}')`."
+            ) from exc
+        except psycopg.errors.UndefinedTable as exc:
+            raise ConsultaRecusada(
+                f"Essa tabela ou view não existe para leitura. As tabelas dos sistemas não são lidas "
+                f"diretamente: consulte as views do esquema `leitura` (veja `esquema('{sistema}')`)."
             ) from exc
         except psycopg.errors.ReadOnlySqlTransaction as exc:
             raise ConsultaRecusada("Somente leitura: o banco recusou a alteração.") from exc

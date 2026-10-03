@@ -7,10 +7,13 @@ Para cada sistema: gera uma senha nova, aplica o SQL pelo `psql` de dentro do
 contêiner do Postgres (localmente ou por SSH no VPS) e grava a senha em
 `~/.financas-mcp/config.toml`. A senha nunca é impressa.
 
-O usuário só tem SELECT nas tabelas de `dominio.TABELAS`, nasce com
-`default_transaction_read_only` e limite de 5 conexões. Rodar de novo troca a
-senha e reaplica as permissões, então também serve para liberar uma tabela
-nova depois de acrescentá-la a `TABELAS`.
+O usuário só tem SELECT nas views do esquema `leitura`, que o CB e o CRV
+publicam pelas próprias migrações (nenhuma tabela do `public`), nasce com
+`default_transaction_read_only` e limite de 5 conexões, e seu caminho de busca
+é o esquema `leitura`. Rodar de novo troca a senha e reaplica as permissões,
+então também serve para liberar uma view nova que uma migração do CB ou do CRV
+tenha acrescentado ao esquema. Se o esquema ainda não existe (o CB ou o CRV não
+foi implantado com ele), o script para antes de mexer em qualquer permissão.
 """
 
 from __future__ import annotations
@@ -22,7 +25,7 @@ import tomllib
 from pathlib import Path
 
 from .config import caminho_padrao
-from .dominio import TABELAS
+from .dominio import ESQUEMA, VIEWS
 
 USUARIO = "mcp_leitura"
 CONTEINER = {
@@ -32,10 +35,29 @@ CONTEINER = {
 PORTA = {"cb": 5202, "crv": 5302}
 
 
-def _sql(banco: str, senha: str, tabelas: tuple[str, ...]) -> str:
-    lista = ", ".join(f'public."{t}"' for t in tabelas)
+def _sql(banco: str, senha: str, views: tuple[str, ...]) -> str:
+    esperadas = ", ".join(f"'{v}'" for v in views)
     return f"""
 \\set ON_ERROR_STOP on
+-- Antes de qualquer permissão: sem o esquema (ou com view faltando) o CB ou o CRV
+-- implantado é anterior ao contrato, e tirar o acesso às tabelas deixaria o
+-- servidor MCP sem nada para ler.
+DO $$
+DECLARE faltando text;
+BEGIN
+  IF NOT EXISTS (SELECT FROM pg_namespace WHERE nspname = '{ESQUEMA}') THEN
+    RAISE EXCEPTION 'o esquema {ESQUEMA} não existe neste banco: implante a versão do sistema que o cria';
+  END IF;
+  SELECT string_agg(v, ', ') INTO faltando
+  FROM unnest(ARRAY[{esperadas}]) AS v
+  WHERE NOT EXISTS (
+    SELECT FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+    WHERE n.nspname = '{ESQUEMA}' AND c.relname = v AND c.relkind = 'v'
+  );
+  IF faltando IS NOT NULL THEN
+    RAISE EXCEPTION 'views ausentes no esquema {ESQUEMA}: %', faltando;
+  END IF;
+END $$;
 DO $$ BEGIN
   IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = '{USUARIO}') THEN
     CREATE ROLE {USUARIO} LOGIN;
@@ -45,12 +67,14 @@ ALTER ROLE {USUARIO} WITH LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATIO
   CONNECTION LIMIT 5 PASSWORD '{senha}';
 ALTER ROLE {USUARIO} SET default_transaction_read_only = on;
 ALTER ROLE {USUARIO} SET statement_timeout = '30s';
+ALTER ROLE {USUARIO} SET search_path = {ESQUEMA}, pg_catalog;
 REVOKE ALL ON ALL TABLES IN SCHEMA public FROM {USUARIO};
 REVOKE ALL ON ALL SEQUENCES IN SCHEMA public FROM {USUARIO};
-REVOKE CREATE ON SCHEMA public FROM {USUARIO};
+REVOKE ALL ON SCHEMA public FROM {USUARIO};
+REVOKE ALL ON ALL TABLES IN SCHEMA {ESQUEMA} FROM {USUARIO};
 GRANT CONNECT ON DATABASE "{banco}" TO {USUARIO};
-GRANT USAGE ON SCHEMA public TO {USUARIO};
-GRANT SELECT ON {lista} TO {USUARIO};
+GRANT USAGE ON SCHEMA {ESQUEMA} TO {USUARIO};
+GRANT SELECT ON ALL TABLES IN SCHEMA {ESQUEMA} TO {USUARIO};
 """
 
 
@@ -128,9 +152,10 @@ def main() -> None:
             'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -tAc "select rolname from pg_roles '
             'where rolsuper and rolcanlogin order by rolname = current_user desc limit 1"'
         ))
-        _executar(args, conteiner, f'psql -q -U {superusuario} -d "$POSTGRES_DB"', _sql(banco, senha, TABELAS[sistema]))
+        _executar(args, conteiner, f'psql -q -U {superusuario} -d "$POSTGRES_DB"', _sql(banco, senha, VIEWS[sistema]))
         sistemas[sistema] = {"porta": PORTA[sistema], "banco": banco, "usuario": USUARIO, "senha": senha}
-        print(f"{args.ambiente}/{sistema}: usuário {USUARIO} pronto em {banco} ({len(TABELAS[sistema])} tabelas)")
+        print(f"{args.ambiente}/{sistema}: usuário {USUARIO} pronto em {banco} "
+              f"(esquema {ESQUEMA}, {len(VIEWS[sistema])} views esperadas)")
 
     dados["ambiente"] = args.ambiente  # o último configurado vira o padrão
     _gravar(caminho, dados)

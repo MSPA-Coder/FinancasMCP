@@ -3,11 +3,11 @@
     python -m financas_mcp.verificar producao
     python -m financas_mcp.verificar local
 
-As consultas deste servidor dependem do schema de três sistemas que mudam sem
-ele saber. Em 24/09/2026 a `crv_carteira` estava quebrada em produção porque a
-revisão 0019 do CRV removeu uma coluna que ela lia -- e nada avisou, porque este
-repositório não tem CI e a suíte roda contra os bancos locais. Rodar isto logo
-depois de implantar o CB ou o CRV é o que fecha essa janela.
+As consultas deste servidor leem as views do esquema `leitura` do CB e do CRV.
+Em 24/09/2026 a `crv_carteira` estava quebrada em produção porque a revisão 0019
+do CRV removeu uma coluna que ela lia -- e nada avisou. Com as views, essa quebra
+reprova na suíte do sistema que mudou; rodar isto logo depois de implantar o CB
+ou o CRV continua sendo a conferência de que a produção respondeu de verdade.
 
 Tudo é leitura: as mesmas transações `READ ONLY` do servidor, com o mesmo
 usuário `mcp_leitura`. Nenhum valor é impresso; só o nome da ferramenta, a
@@ -60,10 +60,10 @@ async def _verificar(server) -> list[str]:
             continue
         if nome.startswith("esquema("):
             sistema = nome[len("esquema("):-1]
-            ausentes = sorted(set(dominio.TABELAS[sistema]) - set(resultado["tabelas"]))
+            ausentes = sorted(set(dominio.VIEWS[sistema]) - set(resultado["views"]))
             if ausentes:
                 falhas.append(nome)
-                print(f"FALHA  {nome}: tabelas liberadas que não existem ou sem SELECT: {ausentes}")
+                print(f"FALHA  {nome}: views esperadas que não existem no esquema leitura: {ausentes}")
                 continue
         print(f"ok     {nome}: {_linhas(resultado)}")
     return falhas
