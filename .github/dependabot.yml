@@ -1,6 +1,8 @@
 version: 2
 updates:
-  - package-ecosystem: pip
+  # `uv`, e nao `pip`: o PR de atualizacao precisa trazer o uv.lock junto, ou a
+  # CI recusa (`uv sync --locked`).
+  - package-ecosystem: uv
     directory: "/"
     # Alarga o teto declarado; o piso so muda quando indispensavel.
     versioning-strategy: widen

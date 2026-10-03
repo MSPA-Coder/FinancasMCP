@@ -10,7 +10,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=9", "ruff>=0.16"]
+dev = ["pytest>=9", "ruff>=0.16", "pip-audit>=2.10,<3"]
 
 [project.scripts]
 financas-mcp = "financas_mcp.server:main"
