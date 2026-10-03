@@ -4,8 +4,9 @@ updates:
   # CI recusa (`uv sync --locked`).
   - package-ecosystem: uv
     directory: "/"
-    # Alarga o teto declarado; o piso so muda quando indispensavel.
-    versioning-strategy: widen
+    # Mantem o piso; so eleva o requisito quando indispensavel (o GitHub
+    # nao aceita `widen`).
+    versioning-strategy: increase-if-necessary
     schedule:
       interval: weekly
       timezone: America/Sao_Paulo
