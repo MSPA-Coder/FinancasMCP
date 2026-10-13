@@ -74,7 +74,8 @@ def test_barreira_recusa_o_resto(consulta):
 def _conectar(sistema: str):
     banco = server.conexoes().config.sistemas[sistema]
     return psycopg.connect(
-        host="127.0.0.1", port=banco.porta, dbname=banco.banco, user=banco.usuario,
+        host=os.environ.get("FINANCAS_MCP_LOCAL_HOST", "127.0.0.1"),
+        port=banco.porta, dbname=banco.banco, user=banco.usuario,
         password=banco.senha, autocommit=True,
     )
 
