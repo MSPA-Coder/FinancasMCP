@@ -19,6 +19,7 @@ from __future__ import annotations
 import asyncio
 import datetime as dt
 import logging
+import os
 import re
 from decimal import Decimal
 from typing import Any
@@ -91,7 +92,8 @@ def _valor(v: Any) -> Any:
 
 def _executar(banco: Banco, porta: int, sql: str, parametros, limite: int) -> tuple[list[str], list]:
     with psycopg.connect(
-        host="127.0.0.1", port=porta, dbname=banco.banco, user=banco.usuario, password=banco.senha,
+        host=os.environ.get("FINANCAS_MCP_LOCAL_HOST", "127.0.0.1"),
+        port=porta, dbname=banco.banco, user=banco.usuario, password=banco.senha,
         connect_timeout=15, application_name="financas-mcp", autocommit=True,
     ) as conexao:
         conexao.execute("BEGIN READ ONLY")

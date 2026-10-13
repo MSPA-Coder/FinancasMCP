@@ -27,3 +27,9 @@ updates:
         applies-to: version-updates
         patterns: ["*"]
         update-types: [minor, patch]
+  - package-ecosystem: docker
+    directory: "/"
+    schedule:
+      interval: weekly
+      timezone: America/Sao_Paulo
+    open-pull-requests-limit: 3
