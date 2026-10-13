@@ -40,6 +40,11 @@ jobs:
       # Python stdlib do runner é suficiente para a orquestração.
       - name: Preparar bancos descartáveis do CB e CRV
         run: python3 tests/ci/preparar_bancos.py _sistemas/cb _sistemas/crv
+        env:
+          # Os bancos descartáveis estão publicados pelo host do runner. O
+          # contêiner quality os acessa pelo host-gateway; a execução normal
+          # mantém a publicação local em 127.0.0.1.
+          POSTGRES_BIND_ADDRESS: 0.0.0.0
       # Este comando administrativo cria uma credencial de leitura efêmera por
       # meio do Docker CLI e grava o config montado somente para leitura abaixo.
       - name: Criar o usuário de leitura para a suíte
