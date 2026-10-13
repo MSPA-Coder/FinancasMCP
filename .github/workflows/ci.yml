@@ -3,9 +3,6 @@ name: CI
 on:
   push:
     branches: [main]
-  # Sem filtro de `branches`, de proposito: a verificacao roda em PR para
-  # QUALQUER base. Com o filtro, um PR empilhado nao disparava check nenhum, e o
-  # sintoma era a ausencia de sinal (pagina limpa que parece aprovada).
   pull_request:
   workflow_dispatch:
   schedule:
@@ -19,53 +16,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  test:
-    name: Qualidade
-    runs-on: ubuntu-24.04
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with:
-          # `requires-python = ">=3.14"` no pyproject: a CI roda a versao que o
-          # projeto exige, nao uma mais antiga.
-          python-version: "3.14"
-      # Mesma versao do uv que os Dockerfiles dos irmaos fixam. Vem pelo pip, e
-      # nao por action: a politica do repositorio barra action de terceiro.
-      - name: Instalar o uv
-        run: python -m pip install "uv==0.12.10"
-      # `--locked` recusa um uv.lock que nao bate com o pyproject.toml, em vez de
-      # resolver de novo em silencio: a CI testa exatamente as versoes que a
-      # maquina do mantenedor instala. O interpretador e o do setup-python; sem
-      # `UV_PYTHON_DOWNLOADS=never` o uv poderia baixar outro.
-      - name: Instalar o projeto pelo lock
-        env:
-          UV_PYTHON_DOWNLOADS: never
-        run: python -m uv sync --locked --extra dev --python "$(command -v python)"
-      - name: Ruff
-        run: .venv/bin/python -m ruff check .
-      # Aqui roda o que nao depende de banco, em segundos. Os testes marcados
-      # `banco_local` rodam no job "Testes com banco", logo abaixo.
-      - name: Testes (sem banco)
-        run: .venv/bin/python -m pytest -q -m "not banco_local"
-      # O Dependabot avisa de versao nova; esta etapa responde outra pergunta:
-      # a versao instalada AGORA tem CVE conhecido? O projeto em si nao esta no
-      # PyPI, por isso `--skip-editable`. Vulnerabilidade sem correcao publicada
-      # sai por `--ignore-vuln <ID>` com comentario dizendo por que.
-      - name: Auditar dependencias instaladas (CVE conhecido)
-        run: .venv/bin/pip-audit --progress-spinner=off --skip-editable
-
-  # As consultas daqui leem as views do esquema `leitura` do CB e do CRV, que
-  # os dois publicam pelas proprias migracoes: em 24/09/2026 a `crv_carteira`
-  # quebrou em producao porque uma revisao do CRV removeu uma coluna que lia as
-  # tabelas direto. Este job sobe os dois a partir do `main` de cada um, pelos
-  # proprios Compose, com o esquema que as migracoes deles produzem (o esquema
-  # `leitura` inclusive), cria dados minimos (`tests/ci/`) e roda a suite
-  # inteira. Os dois sao publicos: nenhum token entra aqui. Uma mudanca de
-  # contrato que escape da suite do sistema que a fez reprova aqui no PR seguinte
-  # ou na segunda-feira.
-  banco:
-    name: Testes com banco
+  quality:
+    name: Docker Python 3.15 e PostgreSQL
     runs-on: ubuntu-24.04
     timeout-minutes: 40
     steps:
@@ -82,24 +34,44 @@ jobs:
           repository: MSPA-Coder/ControleRendaVariavel
           path: _sistemas/crv
           persist-credentials: false
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with:
-          python-version: "3.14"
-      - name: Instalar o uv
-        run: python -m pip install "uv==0.12.10"
-      - name: Instalar o projeto pelo lock
-        env:
-          UV_PYTHON_DOWNLOADS: never
-        run: python -m uv sync --locked --extra dev --python "$(command -v python)"
-      # Segredos efemeros, build, PostgreSQL, migracoes e semente de cada um. Os
-      # conteineres e as portas (5202 e 5302) sao os do Compose deles, os mesmos
-      # da maquina do mantenedor.
-      - name: Subir, migrar e semear o CB e o CRV
-        run: .venv/bin/python tests/ci/preparar_bancos.py _sistemas/cb _sistemas/crv
-      # O mesmo comando que o mantenedor roda na maquina dele: cria o
-      # `mcp_leitura` com SELECT so nas views do esquema `leitura` (e confere que
-      # as de `dominio.VIEWS` existem) e grava o config.toml.
-      - name: Criar o usuario de leitura
-        run: .venv/bin/python -m financas_mcp.usuario_leitura local
-      - name: Testes (todos, com banco)
-        run: .venv/bin/python -m pytest -q
+
+      # Este script só prepara os bancos: Compose constrói, migra e semeia cada
+      # checkout; nenhuma dependência ou teste do FinancasMCP roda no runner.
+      # Python stdlib do runner é suficiente para a orquestração.
+      - name: Preparar bancos descartáveis do CB e CRV
+        run: python3 tests/ci/preparar_bancos.py _sistemas/cb _sistemas/crv
+      # Este comando administrativo cria uma credencial de leitura efêmera por
+      # meio do Docker CLI e grava o config montado somente para leitura abaixo.
+      - name: Criar o usuário de leitura para a suíte
+        run: python3 -m financas_mcp.usuario_leitura local
+
+      - name: Validar Compose
+        run: docker compose --profile quality config --quiet
+      - name: Construir o contêiner de qualidade com Python 3.15
+        run: docker compose --profile quality build --pull --no-cache quality
+      - name: Executar lint e suíte completa no contêiner
+        run: docker compose --profile quality run --rm --no-deps quality
+      - name: Auditar dependências instaladas
+        run: docker compose --profile quality run --rm --no-deps quality pip-audit --progress-spinner=off --skip-editable
+
+      - name: Varredura HIGH/CRITICAL da imagem de qualidade
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/trivy-cache"
+          chmod 777 "$RUNNER_TEMP/trivy-cache"
+          docker save financas-mcp-quality:local -o "$RUNNER_TEMP/quality.tar"
+          chmod 644 "$RUNNER_TEMP/quality.tar"
+          docker compose -f .github/docker-compose.yml run --rm trivy \
+            --cache-dir /tmp/trivy-cache \
+            image --input /varredura/quality.tar \
+                  --scanners vuln \
+                  --severity HIGH,CRITICAL \
+                  --ignore-unfixed \
+                  --exit-code 1 \
+                  --format table
+
+      - name: Encerrar os bancos efêmeros sem remover volumes
+        if: always()
+        run: |
+          docker compose -f _sistemas/cb/compose.yaml down --remove-orphans || true
+          docker compose -f _sistemas/crv/compose.yaml down --remove-orphans || true

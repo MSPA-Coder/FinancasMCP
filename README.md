@@ -42,13 +42,11 @@ ControleBancario (`cb`) e do ControleRendaVariavel (`crv`).
 
 ## Instalação
 
-As versões ficam travadas no `uv.lock`, como nos outros repositórios. O uv
-entra uma vez pelo pip e cria o `.venv` no mesmo lugar de antes, então a
-configuração do Claude Desktop abaixo não muda:
+As versões ficam travadas no `uv.lock`. O uv cria o `.venv` de runtime no mesmo
+lugar de antes, então a configuração do Claude Desktop abaixo não muda:
 
 ```powershell
-py -3.14 -m pip install --user "uv==0.12.10"
-py -3.14 -m uv sync --locked --extra dev
+uv sync --python 3.15 --locked
 
 # usuário de leitura + config (senhas geradas e gravadas, nunca impressas)
 .\.venv\Scripts\python.exe -m financas_mcp.usuario_leitura local
@@ -85,21 +83,29 @@ No Claude Desktop (`%APPDATA%\Claude\claude_desktop_config.json`):
 ## Testes
 
 ```powershell
-.\.venv\Scripts\python.exe -m pytest -q          # contra os bancos locais
-.\.venv\Scripts\python.exe -m ruff check .
+docker compose --profile quality build --pull quality
+docker compose --profile quality run --build --rm --no-deps quality
+docker compose --profile quality run --rm --no-deps quality pip-audit --progress-spinner=off
 $env:FINANCAS_MCP_AMBIENTE = "producao"; .\.venv\Scripts\python.exe tests\cliente_stdio.py
 ```
+
+O estágio `quality` executa Ruff e a suíte completa em Python 3.15 dentro do
+contêiner. Ele monta o `%USERPROFILE%\.financas-mcp\config.toml` somente para
+leitura e alcança os bancos locais publicados nas portas 5202 e 5302 por
+`host.docker.internal`. Se o arquivo estiver em outro lugar, defina
+`FINANCAS_MCP_CONFIG_HOST_PATH` para o caminho completo antes de executar o
+Compose.
 
 Os testes confirmam que o próprio banco recusa escrita e esconde toda tabela dos
 sistemas (só as views de `leitura` são legíveis) mesmo com a barreira do servidor
 contornada. O `cliente_stdio.py`
 sobe o servidor como o Claude Desktop e imprime só contagens, nunca valores.
 
-Na CI, o job "Testes com banco" sobe o CB e o CRV a partir do `main` de cada
-um, pelos próprios Compose, cria dados mínimos (`tests/ci/`) e roda a suíte
-inteira, em cada PR e toda segunda-feira. O saldo do cartão Carbon é conferido
-dos dois lados: a semente o calcula pela função das telas do CB, e o teste,
-pelo SQL do MCP.
+Na CI, o Python pré-instalado no runner só orquestra os Compose do CB e do CRV,
+cria bancos descartáveis e semeia dados mínimos (`tests/ci/`). Ruff, suíte,
+auditoria de dependências e Trivy executam em contêineres. O saldo do cartão
+Carbon é conferido dos dois lados: a semente o calcula pela função das telas do
+CB, e o teste, pelo SQL do MCP.
 
 ## Depois de implantar o CB ou o CRV
 

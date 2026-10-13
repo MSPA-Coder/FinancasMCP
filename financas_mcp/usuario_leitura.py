@@ -79,8 +79,14 @@ GRANT SELECT ON ALL TABLES IN SCHEMA {ESQUEMA} TO {USUARIO};
 
 
 def _comando(ambiente: str, ssh: list[str], conteiner: str, remoto: str) -> list[str]:
-    base = f"docker exec -i {conteiner} sh -c '{remoto}'"
-    return [*ssh, base] if ambiente == "producao" else ["sh", "-c", base]
+    if ambiente == "producao":
+        # O shell é o do servidor remoto. A senha e o SQL seguem pela entrada
+        # padrão de `docker exec`, sem interpolação em comandos locais.
+        return [*ssh, f"docker exec -i {conteiner} sh -c '{remoto}'"]
+    # No Windows, chamar `sh -c` exige Git Bash no PATH sem necessidade. O
+    # Docker CLI já aceita diretamente o executável, o contêiner e o shell
+    # que deve rodar lá dentro.
+    return ["docker", "exec", "-i", conteiner, "sh", "-c", remoto]
 
 
 def _executar(args, conteiner: str, remoto: str, entrada: str | None = None) -> str:
