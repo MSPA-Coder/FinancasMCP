@@ -66,6 +66,11 @@ jobs:
           chmod 777 "$RUNNER_TEMP/trivy-cache"
           docker save financas-mcp-quality:local -o "$RUNNER_TEMP/quality.tar"
           chmod 644 "$RUNNER_TEMP/quality.tar"
+          # A imagem a analisar já está no tar. Liberar as camadas de build
+          # antes de baixar a base do Trivy evita esgotar o disco efêmero do
+          # runner sem pular a varredura.
+          docker image rm financas-mcp-quality:local
+          docker builder prune --all --force
           docker compose -f .github/docker-compose.yml run --rm trivy \
             --cache-dir /tmp/trivy-cache \
             image --input /varredura/quality.tar \
