@@ -1,6 +1,6 @@
 [project]
 name = "financas-mcp"
-version = "0.1.0"
+version = "0.4.1"
 description = "Servidor MCP somente leitura sobre ControleBancario e ControleRendaVariavel."
 requires-python = ">=3.15"
 dependencies = [
