@@ -13,3 +13,12 @@ __pycache__
 .secrets
 .certs
 *.log
+
+# Evidências e configuração privada de ferramentas locais.
+.mypy_cache
+.coverage
+.coverage.*
+CodexTemp
+.claude
+.codex
+.agents

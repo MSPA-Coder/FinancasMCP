@@ -6,3 +6,8 @@ __pycache__/
 *.egg-info/
 # credenciais ficam fora do repositório, em ~/.financas-mcp/
 *.toml.local
+.env
+.env.*
+!.env.example
+.secrets/
+.certs/

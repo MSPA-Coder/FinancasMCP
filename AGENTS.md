@@ -23,7 +23,7 @@ host. Configuração e chaves vivem fora do Git em
 | Mudança | Validação mínima antes de concluir |
 | --- | --- |
 | Documentação | Conferir comandos, caminhos e links alterados. |
-| Código Python, consulta ou regra de leitura | `docker compose --profile quality run --build --rm --no-deps quality` e `pip-audit`, como no README. |
+| Código Python, consulta ou regra de leitura | `docker compose --profile quality run --build --rm quality` e `pip-audit`, como no README. O Compose sobe o PostgreSQL descartável de provisionamento. |
 | Compose, Dockerfile ou dependências | `docker compose --profile quality config --quiet`, build e validação de qualidade. |
 | Credenciais, túnel SSH, permissões ou views | Além da suíte, revisar o isolamento de leitura; em ambiente autorizado, rodar `tests/cliente_stdio.py` ou `python -m financas_mcp.verificar <ambiente>` sem registrar valores. |
 | Mudança no CB ou CRV que afete `leitura` | Validar os três repositórios; após deploy autorizado das fontes, rodar `python -m financas_mcp.verificar producao`. |

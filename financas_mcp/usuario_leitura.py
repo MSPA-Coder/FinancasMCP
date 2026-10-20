@@ -19,6 +19,7 @@ foi implantado com ele), o script para antes de mexer em qualquer permissão.
 from __future__ import annotations
 
 import argparse
+import json
 import secrets
 import subprocess
 import tomllib
@@ -107,7 +108,7 @@ def _toml(valor) -> str:
         return "true" if valor else "false"
     if isinstance(valor, int):
         return str(valor)
-    return "'" + str(valor).replace("'", "") + "'" if "\\" in str(valor) else '"' + str(valor).replace('"', '\\"') + '"'
+    return json.dumps(str(valor), ensure_ascii=False)
 
 
 def _gravar(caminho: Path, dados: dict) -> None:

@@ -84,7 +84,7 @@ No Claude Desktop (`%APPDATA%\Claude\claude_desktop_config.json`):
 
 ```powershell
 docker compose --profile quality build --pull quality
-docker compose --profile quality run --build --rm --no-deps quality
+docker compose --profile quality run --build --rm quality
 docker compose --profile quality run --rm --no-deps quality pip-audit --progress-spinner=off
 $env:FINANCAS_MCP_AMBIENTE = "producao"; .\.venv\Scripts\python.exe tests\cliente_stdio.py
 ```
@@ -95,6 +95,14 @@ leitura e alcança os bancos locais publicados nas portas 5202 e 5302 por
 `host.docker.internal`. Se o arquivo estiver em outro lugar, defina
 `FINANCAS_MCP_CONFIG_HOST_PATH` para o caminho completo antes de executar o
 Compose.
+
+O mesmo comando sobe `postgres-permissoes`, sem porta publicada e com dados em
+tmpfs. Nele a suíte executa o SQL de provisionamento, testa rotação de senha,
+remoção de privilégios e recusa de escrita mesmo após desligar o padrão de
+transação somente leitura. Os testes SSH criam chaves e servidores efêmeros no
+próprio contêiner para conferir pinagem, autenticação, concorrência e reconexão.
+Esses cenários não usam credenciais nem servidores de produção. `--no-deps`
+serve para comandos que dispensam esse banco, como `pip-audit`.
 
 Os testes confirmam que o próprio banco recusa escrita e esconde toda tabela dos
 sistemas (só as views de `leitura` são legíveis) mesmo com a barreira do servidor

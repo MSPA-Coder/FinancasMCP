@@ -9,6 +9,9 @@ services:
       pull: true
     profiles: [quality]
     pull_policy: never
+    depends_on:
+      postgres-permissoes:
+        condition: service_healthy
     command: ["sh", "-ec", "ruff check . && pytest -q"]
     user: "65532:65532"
     read_only: true
@@ -28,6 +31,7 @@ services:
       PYTHONDONTWRITEBYTECODE: "1"
       PYTHONUNBUFFERED: "1"
       RUFF_CACHE_DIR: /tmp/ruff-cache
+      FINANCAS_MCP_TEST_DATABASE_URL: postgresql://qa_admin:qa_descartavel@postgres-permissoes:5432/qa_permissoes
     volumes:
       - type: bind
         source: ${FINANCAS_MCP_CONFIG_HOST_PATH:-${USERPROFILE:-${HOME}}/.financas-mcp/config.toml}
@@ -35,3 +39,27 @@ services:
         read_only: true
     tmpfs:
       - /tmp:rw,nosuid,nodev,noexec,mode=1777,size=128m
+
+  postgres-permissoes:
+    image: postgres:17-alpine
+    profiles: [quality]
+    user: postgres
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 128
+    mem_limit: 384m
+    cpus: "1.0"
+    environment:
+      POSTGRES_DB: qa_permissoes
+      POSTGRES_USER: qa_admin
+      POSTGRES_PASSWORD: qa_descartavel
+    tmpfs:
+      - /tmp:rw,nosuid,nodev,noexec,mode=1777,size=32m
+      - /var/run/postgresql:rw,nosuid,nodev,noexec,mode=1777,size=16m
+      - /var/lib/postgresql/data:rw,nosuid,nodev,mode=0700,uid=70,gid=70,size=128m
+    healthcheck:
+      test: [CMD-SHELL, pg_isready -U qa_admin -d qa_permissoes]
+      interval: 2s
+      timeout: 3s
+      retries: 30

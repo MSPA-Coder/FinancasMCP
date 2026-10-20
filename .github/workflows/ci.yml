@@ -55,7 +55,7 @@ jobs:
       - name: Construir o contêiner de qualidade com Python 3.15
         run: docker compose --profile quality build --pull --no-cache quality
       - name: Executar lint e suíte completa no contêiner
-        run: docker compose --profile quality run --rm --no-deps quality
+        run: docker compose --profile quality run --rm quality
       - name: Auditar dependências instaladas
         run: docker compose --profile quality run --rm --no-deps quality pip-audit --progress-spinner=off --skip-editable
 
@@ -83,5 +83,6 @@ jobs:
       - name: Encerrar os bancos efêmeros sem remover volumes
         if: always()
         run: |
+          docker compose --profile quality down --remove-orphans || true
           docker compose -f _sistemas/cb/compose.yaml down --remove-orphans || true
           docker compose -f _sistemas/crv/compose.yaml down --remove-orphans || true
