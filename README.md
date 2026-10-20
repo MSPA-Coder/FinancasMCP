@@ -124,7 +124,5 @@ CRV removeu uma coluna que ela lia, e nada avisou. Com as views, essa quebra
 reprova na suíte do sistema que mudou. A CI daqui ainda roda a suíte com banco
 contra o `main` do CB e do CRV em cada PR e toda segunda-feira, mas a CI testa o
 `main`, e a produção pode estar em outra versão. Como o VPS não alcança o
-Windows, este passo continua manual. O VPS implanta o CB e o CRV sozinho
-poucos minutos depois de a CI do `main` passar; rode-o quando
-`~/deploy.sh --status` mostrar o VPS igual ao GitHub.
+Windows, este passo continua manual: rode logo depois do `deploy.sh` desses dois.
 Imprime só nomes e contagens, nunca valores.

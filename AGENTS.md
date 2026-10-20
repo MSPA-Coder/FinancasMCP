@@ -26,7 +26,7 @@ host. Configuração e chaves vivem fora do Git em
 | Código Python, consulta ou regra de leitura | Testes focados no que mudou; o `quality` completo e o `pip-audit` rodam na CI do PR, e localmente (como no README) só para reproduzir uma falha dela. |
 | Compose, Dockerfile ou dependências | `docker compose --profile quality config --quiet` e build; a validação de qualidade completa roda na CI do PR. |
 | Credenciais, túnel SSH, permissões ou views | Além da suíte, revisar o isolamento de leitura; em ambiente autorizado, rodar `tests/cliente_stdio.py` ou `python -m financas_mcp.verificar <ambiente>` sem registrar valores. |
-| Mudança no CB ou CRV que afete `leitura` | Validar os três repositórios; depois que o deploy das fontes chegar à produção, rodar `python -m financas_mcp.verificar producao`. |
+| Mudança no CB ou CRV que afete `leitura` | Validar os três repositórios; após deploy autorizado das fontes, rodar `python -m financas_mcp.verificar producao`. |
 
 Não faça deploy, gere credenciais nem altere produção sem instrução explícita.
 
