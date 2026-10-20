@@ -298,7 +298,7 @@ async def cb_projecao_de_caixa(meses: int = 6) -> dict:
 
 
 @mcp.tool(annotations=LEITURA)
-async def crv_carteira(incluir_simuladas: bool = False) -> dict:
+async def crv_carteira() -> dict:
     """Posições abertas (ações e opções) com custo, última cotação e resultado não realizado.
 
     instrumento: 'acao' ou 'opcao' (opção traz ativo-objeto, strike e vencimento).
@@ -307,13 +307,12 @@ async def crv_carteira(incluir_simuladas: bool = False) -> dict:
     calcula o valor de desmonte. Moeda na coluna moeda: não some BRL com USD.
     """
     return await conexoes().consultar("crv", """
-        select carteira, simulada, corretora, instrumento, ativo, objeto, strike, vencimento, mercado, moeda,
+        select carteira, corretora, instrumento, ativo, objeto, strike, vencimento, mercado, moeda,
                lado, quantidade, custo_medio, custo_total, preco, cotado_em, valor_mercado, resultado_aberto,
                aberta_em
         from leitura.posicao
-        where %(simuladas)s or not simulada
         order by moeda, instrumento, valor_mercado desc nulls last
-    """, {"simuladas": incluir_simuladas})
+    """)
 
 
 @mcp.tool(annotations=LEITURA)
@@ -359,7 +358,7 @@ async def crv_operacoes(
     return await conexoes().consultar("crv", """
         select o.id, o.ativo, o.objeto, o.e_opcao, o.moeda, o.lado, o.quantidade,
                o.preco_de_entrada as preco_entrada, o.preco_de_saida as preco_saida, o.aberta_em,
-               o.fechada_em, o.status, o.resultado, o.carteira, o.simulada, o.notas
+               o.fechada_em, o.status, o.resultado, o.carteira, o.notas
         from leitura.operacao o
         where (%(status)s = 'todos' or o.status = %(status)s)
           and coalesce(o.fechada_em, o.aberta_em) between %(inicio)s and %(fim)s

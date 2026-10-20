@@ -37,7 +37,6 @@ def _chamadas(server) -> list[tuple[str, object]]:
         ("cb_faturas", server.cb_faturas()),
         ("cb_projecao_de_caixa", server.cb_projecao_de_caixa(meses=1)),
         ("crv_carteira", server.crv_carteira()),
-        ("crv_carteira(simuladas)", server.crv_carteira(incluir_simuladas=True)),
         ("crv_proventos(ativo)", server.crv_proventos(agrupar="ativo")),
         ("crv_operacoes(todos)", server.crv_operacoes(status="todos")),
     ]

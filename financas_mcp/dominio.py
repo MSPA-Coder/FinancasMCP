@@ -70,7 +70,7 @@ para ele). Cada view traz a descrição dela; as regras abaixo são as que atrav
 - leitura.posicao: posições ABERTAS de ações e opções juntas (instrumento 'acao' ou 'opcao'; a
   opção traz objeto, strike e vencimento). lado 'BUY' é comprada e 'SELL' é vendida. `preco` é a
   última cotação, ou o fechamento anterior quando não há; valor_mercado = quantidade x preco,
-  negativo na posição vendida. `simulada` = true é carteira simulada: exclua de análises reais.
+  negativo na posição vendida.
 - Ativos: `mercado` é 'B3', 'NYSE' ou 'NASDAQ'; `moeda` vem do ativo. Valores monetários na moeda
   do ativo ou da carteira; não some BRL com USD.
 - leitura.cotacao: última cotação por ativo (cotado_em mostra a idade do dado);

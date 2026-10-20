@@ -36,7 +36,7 @@ with app.app_context():
         )
         db.session.add_all([dono, corretora, ativo])
         db.session.flush()
-        carteira = Portfolio(name="Carteira CI", owner_id=dono.id, currency="BRL", simulated=False)
+        carteira = Portfolio(name="Carteira CI", owner_id=dono.id, currency="BRL")
         db.session.add(carteira)
         db.session.flush()
         db.session.add_all([
