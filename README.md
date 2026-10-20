@@ -96,6 +96,10 @@ leitura e alcança os bancos locais publicados nas portas 5202 e 5302 por
 `FINANCAS_MCP_CONFIG_HOST_PATH` para o caminho completo antes de executar o
 Compose.
 
+A CI do PR roda o mesmo estágio, então ele não roda mais na máquina antes do
+PR: localmente, rode só os testes focados no que mudou, e a suíte completa
+apenas para reproduzir uma falha da CI.
+
 Os testes confirmam que o próprio banco recusa escrita e esconde toda tabela dos
 sistemas (só as views de `leitura` são legíveis) mesmo com a barreira do servidor
 contornada. O `cliente_stdio.py`
@@ -120,5 +124,7 @@ CRV removeu uma coluna que ela lia, e nada avisou. Com as views, essa quebra
 reprova na suíte do sistema que mudou. A CI daqui ainda roda a suíte com banco
 contra o `main` do CB e do CRV em cada PR e toda segunda-feira, mas a CI testa o
 `main`, e a produção pode estar em outra versão. Como o VPS não alcança o
-Windows, este passo continua manual: rode logo depois do `deploy.sh` desses dois.
+Windows, este passo continua manual. O VPS implanta o CB e o CRV sozinho
+poucos minutos depois de a CI do `main` passar; rode-o quando
+`~/deploy.sh --status` mostrar o VPS igual ao GitHub.
 Imprime só nomes e contagens, nunca valores.
