@@ -103,7 +103,9 @@ sobe o servidor como o Claude Desktop e imprime só contagens, nunca valores.
 
 Na CI, o Python pré-instalado no runner só orquestra os Compose do CB e do CRV,
 cria bancos descartáveis e semeia dados mínimos (`tests/ci/`). Ruff, suíte,
-auditoria de dependências e Trivy executam em contêineres. O saldo do cartão
+auditoria de dependências e Trivy executam em contêineres. Ela roda depois de
+cada push só como aviso: a verificação que vale é o `quality` completo na
+máquina antes do commit, que vai direto ao `main`, sem PR. O saldo do cartão
 Carbon é conferido dos dois lados: a semente o calcula pela função das telas do
 CB, e o teste, pelo SQL do MCP.
 
@@ -118,7 +120,7 @@ quebrar ou se uma view esperada em `dominio.VIEWS` sumir do esquema `leitura`.
 Em 24/09/2026 a `crv_carteira` estava quebrada em produção porque uma revisão do
 CRV removeu uma coluna que ela lia, e nada avisou. Com as views, essa quebra
 reprova na suíte do sistema que mudou. A CI daqui ainda roda a suíte com banco
-contra o `main` do CB e do CRV em cada PR e toda segunda-feira, mas a CI testa o
+contra o `main` do CB e do CRV em cada push e toda segunda-feira, mas a CI testa o
 `main`, e a produção pode estar em outra versão. Como o VPS não alcança o
 Windows, este passo continua manual: rode logo depois do `deploy.sh` desses dois.
 Imprime só nomes e contagens, nunca valores.
