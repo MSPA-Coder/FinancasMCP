@@ -20,7 +20,7 @@ VIEWS: dict[str, tuple[str, ...]] = {
     "cb": (
         "lancamento", "conta", "categoria", "orcamento_mensal", "operacao",
         "extrato_importacao", "extrato_linha", "fechamento_mes",
-        "lancamento_etiqueta", "lancamento_projeto",
+        "lancamento_etiqueta", "lancamento_projeto", "saldo_conferido",
     ),
     "crv": (
         "posicao", "operacao", "provento", "cotacao", "cotacao_historico", "opcao", "cotacao_opcao",
@@ -63,6 +63,9 @@ traz a descrição dela; as regras abaixo são as que atravessam várias.
   a linha ao lançamento.
 - leitura.orcamento_mensal: meta por categoria, ano e mês, em BRL; só `ativo` vale.
 - leitura.fechamento_mes: meses fechados por conta (não mudam sem reabertura).
+- leitura.saldo_conferido: saldos informados por conta, data e origem (manual, print, myprofit).
+  Cada conta tem UMA fonte que lança diferença; as outras origens só conferem. Duas origens no
+  mesmo dia que diferem além de max(R$ 10, 0,2%) são divergência a investigar, não soma.
 - O sistema começa em 31/12/2025: não há lançamento anterior a 2026-01-01.""",
     "crv": """\
 ControleRendaVariavel -- só existem as views do esquema `leitura` (o caminho de busca já aponta
