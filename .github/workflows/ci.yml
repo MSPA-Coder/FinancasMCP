@@ -25,7 +25,7 @@ jobs:
       - name: Baixar o CB (main)
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          repository: MSPA-Coder/sistema-financeiro
+          repository: MSPA-Coder/controle-bancario
           path: _sistemas/cb
           persist-credentials: false
       - name: Baixar o CRV (main)
