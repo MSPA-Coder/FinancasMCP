@@ -46,7 +46,10 @@ traz a descrição dela; as regras abaixo são as que atravessam várias.
   realizado nos realizados, vencimento e valor previsto nos em aberto.
 - Categorias (`natureza`): 'gerencial' = receita/despesa de verdade; 'transferencia' = movimento
   entre contas próprias (NÃO é gasto nem renda); 'movimentacao' = aporte/resgate de investimento
-  (sai do caixa, mas não é despesa). Análise de gastos/renda: só natureza = 'gerencial'.
+  (sai do caixa, mas não é despesa); 'valorizacao' = variação de mercado do que está aplicado
+  (marcação a mercado de Tesouro, renda fixa, dólar: muda o saldo, não é renda nem despesa).
+  Análise de gastos/renda: só natureza = 'gerencial'. Retorno total de investimentos não existe
+  no CB: soma o resultado do CRV, a valorização daqui e os proventos, e só o consolidador faz isso.
 - leitura.conta: saldo_realizado_hoje = saldo inicial + realizados até hoje; saldo_com_todo_previsto
   inclui tudo o que está previsto; vencido_em_aberto é a soma assinada do que venceu e não foi
   pago. A data de hoje é `leitura.hoje()` (fuso de São Paulo). Moeda é da conta: BRL ou USD, e
