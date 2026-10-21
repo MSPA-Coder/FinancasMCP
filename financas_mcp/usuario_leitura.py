@@ -164,7 +164,9 @@ def main() -> None:
         print(f"{args.ambiente}/{sistema}: usuário {USUARIO} pronto em {banco} "
               f"(esquema {ESQUEMA}, {len(VIEWS[sistema])} views esperadas)")
 
-    dados["ambiente"] = args.ambiente  # o último configurado vira o padrão
+    # O padrão já escolhido não muda ao rotacionar a senha de outro ambiente; só um
+    # arquivo novo adota o ambiente que acabou de ser configurado.
+    dados["ambiente"] = dados.get("ambiente") or args.ambiente
     _gravar(caminho, dados)
     print(f"configuração gravada em {caminho}")
 

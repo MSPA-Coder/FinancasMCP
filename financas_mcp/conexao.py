@@ -164,6 +164,8 @@ class Conexoes:
             raise ConsultaRecusada(f"Erro do banco: {detalhe or exc}") from exc
         truncado = len(linhas) > limite
         return {
+            # Toda resposta diz de onde veio: local (testes) e produção dão números diferentes.
+            "ambiente": self.config.ambiente,
             "colunas": colunas,
             "linhas": [[_valor(v) for v in linha] for linha in linhas[:limite]],
             "quantidade": min(len(linhas), limite),

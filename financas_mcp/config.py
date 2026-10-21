@@ -58,10 +58,39 @@ def caminho_padrao() -> Path:
     return Path(os.environ.get("FINANCAS_MCP_CONFIG") or Path.home() / ".financas-mcp" / "config.toml")
 
 
-def carregar(caminho: Path | None = None) -> Config:
-    dados = tomllib.loads((caminho or caminho_padrao()).read_text(encoding="utf-8"))
-    ambiente = os.environ.get("FINANCAS_MCP_AMBIENTE") or dados["ambiente"]
+@dataclass(frozen=True)
+class Ambientes:
+    """Todos os ambientes do arquivo e qual vale quando a chamada não escolhe."""
+
+    padrao: str
+    configs: dict[str, Config]
+
+
+def _ler(caminho: Path | None) -> dict:
+    return tomllib.loads((caminho or caminho_padrao()).read_text(encoding="utf-8"))
+
+
+def _montar(dados: dict, ambiente: str) -> Config:
     bloco = dados["ambientes"][ambiente]
     ssh = Ssh(**bloco["ssh"]) if "ssh" in bloco else None
     sistemas = {nome: Banco(**valores) for nome, valores in bloco["sistemas"].items() if nome in SISTEMAS}
     return Config(ambiente=ambiente, ssh=ssh, sistemas=sistemas)
+
+
+def carregar(caminho: Path | None = None) -> Config:
+    dados = _ler(caminho)
+    return _montar(dados, os.environ.get("FINANCAS_MCP_AMBIENTE") or dados["ambiente"])
+
+
+def carregar_todos(caminho: Path | None = None) -> Ambientes:
+    """Todos os ambientes do arquivo, para a chamada escolher entre local e produção.
+
+    O padrão continua sendo `ambiente` (ou `FINANCAS_MCP_AMBIENTE`); só a chamada
+    que pede outro ambiente por nome o troca, e a resposta diz qual leu.
+    """
+    dados = _ler(caminho)
+    padrao = os.environ.get("FINANCAS_MCP_AMBIENTE") or dados["ambiente"]
+    configs = {nome: _montar(dados, nome) for nome in dados["ambientes"]}
+    if padrao not in configs:
+        raise KeyError(padrao)
+    return Ambientes(padrao=padrao, configs=configs)

@@ -101,4 +101,8 @@ Como trabalhar:
    contas próprias não são gasto; valores são positivos e o tipo dá o sinal; não some moedas
    diferentes.
 4. Datas no formato AAAA-MM-DD. Valores em texto decimal exato (ex.: "1234.56").
+5. Ambiente: toda ferramenta aceita `ambiente` = "local" (cópia de testes na máquina do usuário) ou
+   "producao" (o VPS). Sem ele vale o padrão, que `sistemas` informa. Os dois dão números diferentes:
+   para afirmar algo sobre os dados reais, peça "producao"; para testes, "local". Toda resposta traz o
+   `ambiente` de onde veio, e você deve dizê-lo ao usuário.
 Nada aqui altera dados: para mudar algo, o usuário usa as telas dos sistemas."""

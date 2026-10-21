@@ -60,6 +60,7 @@ def test_provisionamento_cli_so_grava_config_apos_sucesso_sem_imprimir_senha(tmp
         u.main()
         gravado = tomllib.loads(caminho.read_text())
         assert gravado["ambientes"]["preservado"] == anterior["ambientes"]["preservado"]
+        assert gravado["ambiente"] == "preservado"  # rotacionar um ambiente não troca o padrão
         novo = gravado["ambientes"][ambiente]["sistemas"]["cb"]
         assert novo["banco"] == "qa_sintetico" and novo["usuario"] == "mcp_leitura"
         assert novo["senha"] not in capsys.readouterr().out

@@ -16,22 +16,31 @@ from mcp.server.mcpserver import MCPServer
 from mcp.types import ToolAnnotations
 
 from . import dominio
-from .conexao import Conexoes, validar_consulta
-from .config import carregar
+from .conexao import Conexoes, ConsultaRecusada, validar_consulta
+from .config import Ambientes, carregar_todos
 
 mcp = MCPServer("financas", instructions=dominio.INSTRUCOES)
 # Tudo aqui só lê: o cliente pode chamar sem pedir confirmação de escrita.
 LEITURA = ToolAnnotations(readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False)
-_conexoes: Conexoes | None = None
+_ambientes: Ambientes | None = None
+_conexoes: dict[str, Conexoes] | None = None
 
 Sistema = Literal["cb", "crv"]
+# `None` vale o ambiente padrão do config.toml; cada resposta traz o `ambiente` que leu.
+Ambiente = Literal["local", "producao"]
 
 
-def conexoes() -> Conexoes:
-    global _conexoes
-    if _conexoes is None:
-        _conexoes = Conexoes(carregar())
-    return _conexoes
+def conexoes(ambiente: str | None = None) -> Conexoes:
+    """As conexões do ambiente pedido (ou do padrão); um túnel por ambiente, aberto sob demanda."""
+    global _ambientes, _conexoes
+    if _ambientes is None or _conexoes is None:
+        _ambientes, _conexoes = carregar_todos(), {}
+    nome = ambiente or _ambientes.padrao
+    if nome not in _ambientes.configs:
+        raise ConsultaRecusada(f"Ambiente '{nome}' não configurado. Use: {', '.join(_ambientes.configs)}.")
+    if nome not in _conexoes:
+        _conexoes[nome] = Conexoes(_ambientes.configs[nome])
+    return _conexoes[nome]
 
 
 def _data(texto: str | None, padrao: date) -> date:
@@ -46,24 +55,31 @@ def _inicio_do_ano() -> date:
 
 
 @mcp.tool(annotations=LEITURA)
-async def sistemas() -> dict:
-    """Os sistemas disponíveis, o ambiente (produção ou local) e a data de hoje."""
-    config = conexoes().config
+async def sistemas(ambiente: Ambiente | None = None) -> dict:
+    """Os sistemas disponíveis, o ambiente lido, os ambientes que existem e a data de hoje.
+
+    Todas as ferramentas aceitam `ambiente` ('local' = cópia de testes, 'producao' = o VPS);
+    sem ele, vale o padrão configurado, que aparece em `padrao`. Os números de um e de outro
+    diferem: diga ao usuário de qual ambiente vieram.
+    """
+    config = conexoes(ambiente).config
     return {
         "ambiente": config.ambiente,
+        "padrao": _ambientes.padrao,
+        "ambientes": list(_ambientes.configs),
         "hoje": date.today().isoformat(),
         "sistemas": {nome: dominio.NOMES[nome] for nome in config.sistemas},
     }
 
 
 @mcp.tool(annotations=LEITURA)
-async def esquema(sistema: Sistema) -> dict:
+async def esquema(sistema: Sistema, ambiente: Ambiente | None = None) -> dict:
     """Views e colunas liberadas de um sistema, com as regras para ler os dados certo.
 
     Chame antes de escrever SQL livre para aquele sistema. As views são as do esquema
     `leitura`, que o próprio sistema publica; cada uma traz a descrição.
     """
-    resultado = await conexoes().consultar(
+    resultado = await conexoes(ambiente).consultar(
         sistema,
         """
         select c.relname, obj_description(c.oid, 'pg_class'),
@@ -77,31 +93,32 @@ async def esquema(sistema: Sistema) -> dict:
         (dominio.ESQUEMA,),
     )
     return {
+        "ambiente": resultado["ambiente"],
         "regras": dominio.REGRAS[sistema],
         "views": {nome: {"descricao": descricao, "colunas": colunas} for nome, descricao, colunas in resultado["linhas"]},
     }
 
 
 @mcp.tool(annotations=LEITURA)
-async def sql(sistema: Sistema, consulta: str) -> dict:
+async def sql(sistema: Sistema, consulta: str, ambiente: Ambiente | None = None) -> dict:
     """Executa um SELECT (ou WITH ... SELECT) somente leitura no sistema indicado.
 
     Um comando por vez; até 2000 linhas e 15 s. Para resultados grandes, agregue no SQL
     (group by, date_trunc) em vez de trazer linhas soltas.
     """
-    return await conexoes().consultar(sistema, validar_consulta(consulta))
+    return await conexoes(ambiente).consultar(sistema, validar_consulta(consulta))
 
 
 # --- ControleBancario -----------------------------------------------------------
 
 
 @mcp.tool(annotations=LEITURA)
-async def cb_contas() -> dict:
+async def cb_contas(ambiente: Ambiente | None = None) -> dict:
     """Contas do CB com saldo realizado hoje, total vencido em aberto e saldo com todo o previsto.
 
     Cartões de crédito aparecem com saldo negativo (fatura em aberto).
     """
-    return await conexoes().consultar("cb", """
+    return await conexoes(ambiente).consultar("cb", """
         select id, conta, titular, instituicao, moeda, tipo, saldo_inicial, data_saldo_inicial,
                saldo_realizado_hoje, vencido_em_aberto, saldo_com_todo_previsto, ultimo_vencimento_previsto
         from leitura.conta
@@ -125,6 +142,7 @@ async def cb_resumo_mensal(
     agrupar: Literal["categoria", "conta", "tipo", "categoria_e_conta"] = "categoria",
     conta_id: int | None = None,
     somente_gerenciais: bool = True,
+    ambiente: Ambiente | None = None,
 ) -> dict:
     """Receitas e despesas somadas por mês e pelo agrupamento escolhido.
 
@@ -142,7 +160,7 @@ async def cb_resumo_mensal(
         "em_aberto": "l.status <> 'realizado'",
     }[visao]
     grupo = _GRUPOS_CB[agrupar]
-    return await conexoes().consultar("cb", f"""
+    return await conexoes(ambiente).consultar("cb", f"""
         select to_char(l.data, 'YYYY-MM') as mes, {grupo} as grupo, l.moeda,
                l.tipo, sum(l.valor) as total, count(*) as lancamentos
         from leitura.lancamento l
@@ -166,6 +184,7 @@ async def cb_lancamentos(
     tipo: Literal["receita", "despesa", "todos"] = "todos",
     somente_gerenciais: bool = False,
     limite: int = 300,
+    ambiente: Ambiente | None = None,
 ) -> dict:
     """Lançamentos individuais do CB com filtros; mais recentes primeiro.
 
@@ -175,7 +194,7 @@ async def cb_lancamentos(
     com vencimento anterior a hoje é 'vencidos', mesmo que o CB ainda o guarde como
     'a_vencer'.
     """
-    return await conexoes().consultar("cb", """
+    return await conexoes(ambiente).consultar("cb", """
         select l.id, l.data, l.status, l.tipo, l.valor, l.descricao, l.categoria, l.natureza,
                l.conta, l.moeda, l.parcela, l.recorrente, l.estimativa_de_fatura,
                l.vencimento, l.realizado_em
@@ -196,9 +215,9 @@ async def cb_lancamentos(
 
 
 @mcp.tool(annotations=LEITURA)
-async def cb_categorias() -> dict:
+async def cb_categorias(ambiente: Ambiente | None = None) -> dict:
     """Categorias do CB com natureza e quantos lançamentos cada uma tem."""
-    return await conexoes().consultar("cb", """
+    return await conexoes(ambiente).consultar("cb", """
         select id, categoria, natureza, lancamentos, primeiro, ultimo
         from leitura.categoria
         order by natureza, categoria
@@ -206,7 +225,7 @@ async def cb_categorias() -> dict:
 
 
 @mcp.tool(annotations=LEITURA)
-async def cb_orcamento(ano: int | None = None, mes: int | None = None) -> dict:
+async def cb_orcamento(ano: int | None = None, mes: int | None = None, ambiente: Ambiente | None = None) -> dict:
     """Orçamento (metas) do mês por categoria contra as despesas realizadas em BRL.
 
     Inclui categorias com gasto e sem meta (planejado vazio). Padrão: mês atual.
@@ -214,7 +233,7 @@ async def cb_orcamento(ano: int | None = None, mes: int | None = None) -> dict:
     hoje = date.today()
     ano = ano or hoje.year
     mes = mes or hoje.month
-    return await conexoes().consultar("cb", """
+    return await conexoes(ambiente).consultar("cb", """
         with gasto as (
             select l.categoria_id, sum(l.valor) as realizado
             from leitura.lancamento l
@@ -239,13 +258,13 @@ async def cb_orcamento(ano: int | None = None, mes: int | None = None) -> dict:
 
 
 @mcp.tool(annotations=LEITURA)
-async def cb_faturas() -> dict:
+async def cb_faturas(ambiente: Ambiente | None = None) -> dict:
     """Cartões de crédito: faturas importadas (totais) e o que vem pela frente por mês.
 
     'futuro' separa, por mês de vencimento, parcelas já contratadas, gasto estimado (mediana
     das últimas faturas) e outros lançamentos, além dos pagamentos que chegam ao cartão.
     """
-    c = conexoes()
+    c = conexoes(ambiente)
     importadas = await c.consultar("cb", """
         select b.conta as cartao, b.id as importacao, b.arquivo, b.importada_em::date as importada_em,
                sum(-l.valor) filter (where l.valor < 0) as compras,
@@ -274,13 +293,13 @@ async def cb_faturas() -> dict:
 
 
 @mcp.tool(annotations=LEITURA)
-async def cb_projecao_de_caixa(meses: int = 6) -> dict:
+async def cb_projecao_de_caixa(meses: int = 6, ambiente: Ambiente | None = None) -> dict:
     """Saldo de cada conta no fim de cada mês, do mês atual até `meses` à frente.
 
     Considera realizados pela data de realização e em aberto (inclusive vencidos) pelo
     vencimento, somando ao saldo inicial. Mostra onde e quando uma conta fica negativa.
     """
-    return await conexoes().consultar("cb", """
+    return await conexoes(ambiente).consultar("cb", """
         with fins as (
             select (date_trunc('month', leitura.hoje()) + make_interval(months => n + 1) - interval '1 day')::date as fim
             from generate_series(0, %(meses)s) as n
@@ -298,7 +317,7 @@ async def cb_projecao_de_caixa(meses: int = 6) -> dict:
 
 
 @mcp.tool(annotations=LEITURA)
-async def crv_carteira() -> dict:
+async def crv_carteira(ambiente: Ambiente | None = None) -> dict:
     """Posições abertas (ações e opções) com custo, última cotação e resultado não realizado.
 
     instrumento: 'acao' ou 'opcao' (opção traz ativo-objeto, strike e vencimento).
@@ -306,7 +325,7 @@ async def crv_carteira() -> dict:
     quantidade x preco, com sinal negativo para posição vendida (side 'SELL'), como o CRV
     calcula o valor de desmonte. Moeda na coluna moeda: não some BRL com USD.
     """
-    return await conexoes().consultar("crv", """
+    return await conexoes(ambiente).consultar("crv", """
         select carteira, corretora, instrumento, ativo, objeto, strike, vencimento, mercado, moeda,
                lado, quantidade, custo_medio, custo_total, preco, cotado_em, valor_mercado, resultado_aberto,
                aberta_em
@@ -320,6 +339,7 @@ async def crv_proventos(
     inicio: str | None = None,
     fim: str | None = None,
     agrupar: Literal["mes", "ativo", "mes_e_ativo", "tipo"] = "mes",
+    ambiente: Ambiente | None = None,
 ) -> dict:
     """Proventos recebidos (dividendos, JCP, aluguel) somados por mês, ativo ou tipo.
 
@@ -334,7 +354,7 @@ async def crv_proventos(
         "mes_e_ativo": "to_char(p.pago_em, 'YYYY-MM') || ' ' || p.ativo",
         "tipo": "p.tipo",
     }[agrupar]
-    return await conexoes().consultar("crv", f"""
+    return await conexoes(ambiente).consultar("crv", f"""
         select {grupo} as grupo, p.moeda, sum(p.valor) as total, count(*) as pagamentos
         from leitura.provento p
         where p.pago_em between %(inicio)s and %(fim)s
@@ -347,6 +367,7 @@ async def crv_operacoes(
     inicio: str | None = None,
     fim: str | None = None,
     status: Literal["OPEN", "CLOSED", "todos"] = "CLOSED",
+    ambiente: Ambiente | None = None,
 ) -> dict:
     """Operações do CRV (compra/venda de ações e de opções), com resultado realizado das fechadas.
 
@@ -355,7 +376,7 @@ async def crv_operacoes(
     """
     inicio_d = _data(inicio, _inicio_do_ano())
     fim_d = _data(fim, date.today())
-    return await conexoes().consultar("crv", """
+    return await conexoes(ambiente).consultar("crv", """
         select o.id, o.ativo, o.objeto, o.e_opcao, o.moeda, o.lado, o.quantidade,
                o.preco_de_entrada as preco_entrada, o.preco_de_saida as preco_saida, o.aberta_em,
                o.fechada_em, o.status, o.resultado, o.carteira, o.notas

@@ -22,11 +22,25 @@ ControleBancario (`cb`) e do ControleRendaVariavel (`crv`).
   que mudou, e não em produção.
 - As credenciais ficam fora do repositório, em `%USERPROFILE%\.financas-mcp\config.toml`.
 
+## Local ou produção, por chamada
+
+Toda ferramenta aceita `ambiente`: `"local"` (a cópia de testes na máquina) ou
+`"producao"` (o VPS, pelo túnel SSH). Sem ele vale o padrão do `config.toml`
+(`ambiente = ...`, ou `FINANCAS_MCP_AMBIENTE`), que `sistemas` informa em
+`padrao`. Os dois ambientes têm túneis e conexões separados, abertos só quando
+alguém os consulta, e **toda resposta traz o campo `ambiente` de onde veio**:
+os números do local e da produção diferem (o local acumula testes), e foi
+justamente confundi-los que motivou a opção. Para afirmar algo sobre os dados
+reais, peça `producao`.
+
+Mudar o código do servidor exige reiniciar o Claude Desktop (ou a sessão que o
+carregou): o processo MCP antigo continua em memória.
+
 ## Ferramentas
 
 | Ferramenta | O que devolve |
 |---|---|
-| `sistemas` | ambiente, data de hoje e sistemas disponíveis |
+| `sistemas` | ambiente lido, ambientes existentes, padrão, data de hoje e sistemas disponíveis |
 | `esquema(sistema)` | views, descrições, colunas e regras de leitura do domínio |
 | `sql(sistema, consulta)` | qualquer `SELECT` sobre as views, até 2.000 linhas e 15 s |
 | `cb_contas` | saldo realizado hoje, vencido em aberto e saldo com todo o previsto |
@@ -54,7 +68,9 @@ uv sync --python 3.15 --locked
     --host 100.94.82.91 --chave C:\caminho\da\chave.key --chave-do-host "ssh-ed25519 AAAA..."
 ```
 
-`ambiente` no `config.toml` escolhe local ou produção; `FINANCAS_MCP_AMBIENTE`
+`ambiente` no `config.toml` é o padrão, hoje `producao` (o `usuario_leitura` não o
+troca ao rotacionar outro ambiente); a suíte força `local` em `tests/conftest.py`.
+`FINANCAS_MCP_AMBIENTE`
 sobrepõe. Quando uma migração do CB ou do CRV acrescentar uma view ao esquema
 `leitura`, acrescente o nome dela a `VIEWS` e rode o `usuario_leitura` de novo
 (ele troca a senha e reaplica as permissões). O script confere antes de mexer em
