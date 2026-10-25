@@ -33,8 +33,8 @@ commit: é essa verificação que vale. O commit vai direto ao `main`, com
 `git push`, sem PR e sem esperar nada; a regra do `main` continua impedindo
 apagá-lo ou reescrever o histórico (nada de push forçado nem de rebase do
 `main`). A CI roda depois de cada push só como aviso e não bloqueia nada; se
-falhar, investigue. O Dependabot continua por PR, com os checks obrigatórios e
-auto-merge.
+falhar, investigue. O Dependabot continua por PR, com os checks obrigatórios; o
+merge é manual (o workflow de auto-merge foi removido).
 
 Não faça deploy, gere credenciais nem altere produção sem instrução explícita.
 Corrija testes que medem implementação em vez de mudar produção para passar.
