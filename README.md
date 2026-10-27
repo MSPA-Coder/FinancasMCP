@@ -3,6 +3,13 @@
 Servidor MCP **somente leitura** que dá ao Claude acesso aos dados do
 ControleBancario (`cb`) e do ControleRendaVariavel (`crv`).
 
+## Ambiente oficial
+
+| Atividade | Ambiente |
+| --- | --- |
+| Servidor MCP iniciado pelo Claude Desktop | `.venv` local com Python 3.15, sincronizada por `uv sync --locked` |
+| Qualidade e banco descartável de permissões | Docker Compose |
+
 ## Como funciona
 
 - Roda no Windows, iniciado pelo Claude Desktop (transporte stdio).
