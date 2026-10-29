@@ -185,7 +185,7 @@ def test_toda_resposta_diz_de_que_ambiente_veio():
     assert asyncio.run(server.esquema("cb", ambiente="local"))["ambiente"] == "local"
     quadro = asyncio.run(server.sistemas())
     assert quadro["padrao"] == "local"
-    assert "producao" in quadro["ambientes"]
+    assert "local" in quadro["ambientes"]
 
 
 @pytest.mark.banco_local
