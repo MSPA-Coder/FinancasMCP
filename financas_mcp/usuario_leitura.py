@@ -38,8 +38,10 @@ PORTA = {"cb": 5202, "crv": 5302}
 
 def _sql(banco: str, senha: str, views: tuple[str, ...]) -> str:
     esperadas = ", ".join(f"'{v}'" for v in views)
+    nomes_views = ", ".join(f'{ESQUEMA}."{v}"' for v in views)
     return f"""
 \\set ON_ERROR_STOP on
+BEGIN;
 -- Antes de qualquer permissão: sem o esquema (ou com view faltando) o CB ou o CRV
 -- implantado é anterior ao contrato, e tirar o acesso às tabelas deixaria o
 -- servidor MCP sem nada para ler.
@@ -58,6 +60,12 @@ BEGIN
   IF faltando IS NOT NULL THEN
     RAISE EXCEPTION 'views ausentes no esquema {ESQUEMA}: %', faltando;
   END IF;
+  IF EXISTS (
+    SELECT 1 FROM pg_auth_members m JOIN pg_roles r ON r.oid=m.member
+    WHERE r.rolname='{USUARIO}'
+  ) THEN
+    RAISE EXCEPTION 'o usuário {USUARIO} participa de outros papéis; revise as permissões antes de provisionar';
+  END IF;
 END $$;
 DO $$ BEGIN
   IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = '{USUARIO}') THEN
@@ -75,7 +83,40 @@ REVOKE ALL ON SCHEMA public FROM {USUARIO};
 REVOKE ALL ON ALL TABLES IN SCHEMA {ESQUEMA} FROM {USUARIO};
 GRANT CONNECT ON DATABASE "{banco}" TO {USUARIO};
 GRANT USAGE ON SCHEMA {ESQUEMA} TO {USUARIO};
-GRANT SELECT ON ALL TABLES IN SCHEMA {ESQUEMA} TO {USUARIO};
+GRANT SELECT ON {nomes_views} TO {USUARIO};
+-- REVOKE do papel não retira privilégios concedidos a PUBLIC ou em outros
+-- esquemas. Recuse a configuração inteira se o acesso efetivo for maior.
+DO $$ BEGIN
+  IF EXISTS (
+    SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
+    WHERE n.nspname NOT IN ('pg_catalog', 'information_schema')
+      AND n.nspname NOT LIKE 'pg_toast%'
+      AND n.nspname NOT LIKE 'pg_temp%'
+      AND has_schema_privilege('{USUARIO}', n.oid, 'USAGE')
+      AND (
+        (c.relkind IN ('r', 'p', 'v', 'm', 'f') AND (
+          has_table_privilege('{USUARIO}', c.oid, 'INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER')
+          OR has_any_column_privilege('{USUARIO}', c.oid, 'INSERT, UPDATE, REFERENCES')
+          OR (has_any_column_privilege('{USUARIO}', c.oid, 'SELECT')
+              AND NOT (n.nspname='{ESQUEMA}' AND c.relkind='v' AND c.relname=ANY(ARRAY[{esperadas}])))
+        ))
+        OR (c.relkind='S' AND has_sequence_privilege('{USUARIO}', c.oid, 'USAGE, SELECT, UPDATE'))
+      )
+  ) THEN
+    RAISE EXCEPTION 'o usuário {USUARIO} tem privilégios efetivos fora das views previstas; revise as concessões';
+  END IF;
+  IF EXISTS (
+    SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
+    WHERE n.nspname NOT IN ('pg_catalog', 'information_schema')
+      AND n.nspname NOT LIKE 'pg_toast%'
+      AND n.nspname NOT LIKE 'pg_temp%'
+      AND has_schema_privilege('{USUARIO}', n.oid, 'USAGE')
+      AND has_function_privilege('{USUARIO}', p.oid, 'EXECUTE')
+  ) THEN
+    RAISE EXCEPTION 'o usuário {USUARIO} pode executar rotinas personalizadas; revise as concessões';
+  END IF;
+END $$;
+COMMIT;
 """
 
 

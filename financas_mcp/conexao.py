@@ -90,20 +90,25 @@ def _valor(v: Any) -> Any:
     return v
 
 
-def _executar(banco: Banco, porta: int, sql: str, parametros, limite: int) -> tuple[list[str], list]:
+def _executar(banco: Banco, porta: int, consultas: list[tuple[str, dict | tuple | None]],
+              limite: int) -> list[tuple[list[str], list]]:
     with psycopg.connect(
         host=os.environ.get("FINANCAS_MCP_LOCAL_HOST", "127.0.0.1"),
         port=porta, dbname=banco.banco, user=banco.usuario, password=banco.senha,
         connect_timeout=15, application_name="financas-mcp", autocommit=True,
     ) as conexao:
-        conexao.execute("BEGIN READ ONLY")
+        # Todas as partes da mesma resposta observam o mesmo snapshot.
+        conexao.execute("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY")
         conexao.execute(f"SET LOCAL statement_timeout = '{TEMPO_MAXIMO}'")
-        with conexao.cursor() as cursor:
-            cursor.execute(sql, parametros)
-            colunas = [c.name for c in cursor.description or []]
-            linhas = cursor.fetchmany(limite + 1)
+        resultados = []
+        for sql, parametros in consultas:
+            with conexao.cursor() as cursor:
+                cursor.execute(sql, parametros)
+                colunas = [c.name for c in cursor.description or []]
+                linhas = cursor.fetchmany(limite + 1)
+                resultados.append((colunas, linhas))
         conexao.execute("ROLLBACK")
-    return colunas, linhas
+    return resultados
 
 
 class Conexoes:
@@ -136,6 +141,11 @@ class Conexoes:
 
     async def consultar(self, sistema: str, sql: str, parametros: dict | tuple | None = None,
                         limite: int = LIMITE_DE_LINHAS) -> dict:
+        return (await self.consultar_conjunto(sistema, [(sql, parametros)], limite))[0]
+
+    async def consultar_conjunto(self, sistema: str, consultas: list[tuple[str, dict | tuple | None]],
+                                limite: int = LIMITE_DE_LINHAS) -> list[dict]:
+        """Consulta várias partes do mesmo banco em um snapshot somente leitura."""
         banco = self.config.sistemas.get(sistema)
         if banco is None:
             raise ConsultaRecusada(f"Sistema '{sistema}' não configurado. Use: {', '.join(self.config.sistemas)}.")
@@ -143,7 +153,7 @@ class Conexoes:
         # psycopg síncrono numa thread: o assíncrono não roda no laço padrão do
         # Windows (Proactor), que é o do servidor MCP. O túnel segue no laço.
         try:
-            colunas, linhas = await asyncio.to_thread(_executar, banco, porta, sql, parametros, limite)
+            resultados = await asyncio.to_thread(_executar, banco, porta, consultas, limite)
         except psycopg.errors.InsufficientPrivilege as exc:
             raise ConsultaRecusada(
                 "Sem permissão: só as views do esquema `leitura` estão liberadas para leitura (usuários, "
@@ -162,12 +172,11 @@ class Conexoes:
             diag = exc.diag
             detalhe = " ".join(filter(None, [diag.message_primary, diag.message_hint and f"Dica: {diag.message_hint}"]))
             raise ConsultaRecusada(f"Erro do banco: {detalhe or exc}") from exc
-        truncado = len(linhas) > limite
-        return {
+        return [{
             # Toda resposta diz de onde veio: local (testes) e produção dão números diferentes.
             "ambiente": self.config.ambiente,
             "colunas": colunas,
             "linhas": [[_valor(v) for v in linha] for linha in linhas[:limite]],
             "quantidade": min(len(linhas), limite),
-            "truncado": truncado,
-        }
+            "truncado": len(linhas) > limite,
+        } for colunas, linhas in resultados]

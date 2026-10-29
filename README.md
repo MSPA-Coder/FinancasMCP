@@ -29,6 +29,15 @@ ControleBancario (`cb`) e do ControleRendaVariavel (`crv`).
   que mudou, e não em produção.
 - As credenciais ficam fora do repositório, em `%USERPROFILE%\.financas-mcp\config.toml`.
 
+O provisionamento concede acesso apenas às views listadas em `dominio.VIEWS`.
+Se o usuário já pertencer a outros papéis, ele recusa antes de alterar a senha
+ou as permissões, para que a associação seja revisada pelo administrador. Se
+concessões públicas ou de outros esquemas ampliarem o acesso efetivo a tabelas
+ou sequências, o provisionamento também é revertido para revisão.
+Rotinas personalizadas executáveis em esquemas acessíveis também causam recusa:
+o administrador precisa revisar e restringir essas permissões antes de tentar
+novamente. As funções nativas dos esquemas de sistema ficam fora dessa análise.
+
 ## Local ou produção, por chamada
 
 Toda ferramenta aceita `ambiente`: `"local"` (a cópia de testes na máquina) ou
@@ -60,6 +69,10 @@ carregou): o processo MCP antigo continua em memória.
 | `crv_carteira` | posições com custo, cotação e resultado aberto |
 | `crv_proventos` | dividendos, JCP e aluguel por mês, ativo ou tipo |
 | `crv_operacoes` | operações de ações e de opções e resultado realizado |
+
+Cada consulta individual usa sua própria transação de leitura. Em `cb_faturas`,
+as partes `importadas` e `futuro` compartilham o mesmo snapshot do CB. Consultas
+em CB e CRV não formam um snapshot distribuído entre os dois bancos.
 
 ## Instalação
 

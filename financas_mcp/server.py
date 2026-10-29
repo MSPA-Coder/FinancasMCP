@@ -263,9 +263,10 @@ async def cb_faturas(ambiente: Ambiente | None = None) -> dict:
 
     'futuro' separa, por mês de vencimento, parcelas já contratadas, gasto estimado (mediana
     das últimas faturas) e outros lançamentos, além dos pagamentos que chegam ao cartão.
+    As duas partes compartilham o mesmo snapshot de leitura do CB.
     """
     c = conexoes(ambiente)
-    importadas = await c.consultar("cb", """
+    importadas, futuro = await c.consultar_conjunto("cb", [("""
         select b.conta as cartao, b.id as importacao, b.arquivo, b.importada_em::date as importada_em,
                sum(-l.valor) filter (where l.valor < 0) as compras,
                sum(l.valor) filter (where l.valor > 0 and l.descricao !~* '^pag(amentos?)?\\y') as creditos,
@@ -276,8 +277,7 @@ async def cb_faturas(ambiente: Ambiente | None = None) -> dict:
         where b.tipo_conta = 'cartao_credito'
         group by b.conta, b.id, b.arquivo, b.importada_em
         order by b.conta, b.id desc
-    """)
-    futuro = await c.consultar("cb", """
+    """, None), ("""
         select l.conta as cartao, to_char(l.vencimento, 'YYYY-MM') as mes,
                sum(l.valor_previsto) filter (where l.tipo = 'despesa' and l.tipo_operacao = 'installment') as parcelas,
                sum(l.valor_previsto) filter (where l.tipo = 'despesa' and l.gasto_estimado_do_cartao) as gasto_estimado,
@@ -288,7 +288,7 @@ async def cb_faturas(ambiente: Ambiente | None = None) -> dict:
         join leitura.conta c on c.id = l.conta_id and c.tipo = 'cartao_credito'
         where l.status <> 'realizado'
         group by 1, 2 order by 1, 2
-    """)
+    """, None)])
     return {"importadas": importadas, "futuro": futuro}
 
 

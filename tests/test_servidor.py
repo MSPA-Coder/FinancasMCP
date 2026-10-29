@@ -196,13 +196,19 @@ def test_status_efetivo_vem_da_view_e_obedece_a_regra():
 
 @pytest.mark.banco_local
 def test_filtro_de_status_dos_lancamentos_usa_o_efetivo():
+    contagens = rodar(server.conexoes().consultar("cb", """
+        select status, count(*) from leitura.lancamento group by status
+    """))
+    totais = {linha[0]: linha[1] for linha in contagens["linhas"]}
     por_status = {
         s: rodar(server.cb_lancamentos(status=s, limite=2000))
         for s in ("realizado", "a_vencer", "vencidos", "todos")
     }
-    assert all(not r["truncado"] for r in por_status.values())
-    parcial = sum(por_status[s]["quantidade"] for s in ("realizado", "a_vencer", "vencidos"))
-    assert parcial == por_status["todos"]["quantidade"]
+    assert set(totais) <= {"realizado", "a_vencer", "vencidos"}
+    for status, resultado in por_status.items():
+        total = sum(totais.values()) if status == "todos" else totais.get(status, 0)
+        assert resultado["quantidade"] == min(total, 2000)
+        assert resultado["truncado"] is (total > 2000)
     hoje = _hoje_no_banco().isoformat()
     for s in ("realizado", "a_vencer", "vencidos"):
         col = por_status[s]["colunas"].index("status")
