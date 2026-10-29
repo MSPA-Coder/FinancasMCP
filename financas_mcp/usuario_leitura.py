@@ -107,11 +107,16 @@ DO $$ BEGIN
   END IF;
   IF EXISTS (
     SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
+    JOIN pg_language l ON l.oid=p.prolang
     WHERE n.nspname NOT IN ('pg_catalog', 'information_schema')
       AND n.nspname NOT LIKE 'pg_toast%'
       AND n.nspname NOT LIKE 'pg_temp%'
       AND has_schema_privilege('{USUARIO}', n.oid, 'USAGE')
       AND has_function_privilege('{USUARIO}', p.oid, 'EXECUTE')
+      -- SQL e PL/pgSQL confiáveis com SECURITY INVOKER usam somente os
+      -- privilégios do próprio leitor, já conferidos acima. As views dos
+      -- aplicativos dependem de funções desse tipo, inclusive gatilhos.
+      AND (p.prosecdef OR NOT (l.lanpltrusted AND l.lanname IN ('sql', 'plpgsql')))
   ) THEN
     RAISE EXCEPTION 'o usuário {USUARIO} pode executar rotinas personalizadas; revise as concessões';
   END IF;

@@ -154,6 +154,23 @@ def test_provisionamento_recusa_funcao_privilegiada_acessivel(provisionamento):
         admin.execute("DROP FUNCTION public.qa_revelar()")
 
 
+def test_provisionamento_aceita_funcao_de_view_sem_ampliar_privilegios(provisionamento):
+    admin, dados, usuario = provisionamento
+    admin.execute("CREATE FUNCTION leitura.hoje() RETURNS date LANGUAGE sql STABLE "
+                  "AS $$ SELECT (now() AT TIME ZONE 'America/Sao_Paulo')::date $$")
+    admin.execute("CREATE FUNCTION public.qa_invoker() RETURNS numeric LANGUAGE sql "
+                  "AS $$ SELECT valor FROM public.qa_privado LIMIT 1 $$")
+    try:
+        aplicar(admin)
+        with psycopg.connect(**{**dados, "user": usuario, "password": "senha-sintetica-inicial"}) as leitura:
+            assert leitura.execute("SELECT leitura.hoje() IS NOT NULL").fetchone()[0]
+            with pytest.raises(psycopg.errors.InsufficientPrivilege):
+                leitura.execute("SELECT public.qa_invoker()")
+    finally:
+        admin.execute("DROP FUNCTION leitura.hoje()")
+        admin.execute("DROP FUNCTION public.qa_invoker()")
+
+
 def test_consulta_cancelada_no_banco_vira_recusa_controlada_e_recupera(provisionamento, monkeypatch):
     admin, dados, usuario = provisionamento
     aplicar(admin)

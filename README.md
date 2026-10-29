@@ -34,9 +34,10 @@ Se o usuário já pertencer a outros papéis, ele recusa antes de alterar a senh
 ou as permissões, para que a associação seja revisada pelo administrador. Se
 concessões públicas ou de outros esquemas ampliarem o acesso efetivo a tabelas
 ou sequências, o provisionamento também é revertido para revisão.
-Rotinas personalizadas executáveis em esquemas acessíveis também causam recusa:
-o administrador precisa revisar e restringir essas permissões antes de tentar
-novamente. As funções nativas dos esquemas de sistema ficam fora dessa análise.
+Rotinas executáveis com privilégios do proprietário, ou em linguagens fora de
+SQL e PL/pgSQL confiáveis, também causam recusa. Rotinas dessas duas linguagens
+com privilégios do próprio leitor continuam disponíveis para as views. As
+funções nativas dos esquemas de sistema ficam fora dessa análise.
 
 ## Local ou produção, por chamada
 
