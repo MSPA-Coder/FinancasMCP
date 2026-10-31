@@ -6,7 +6,6 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.test
-      pull: true
     profiles: [quality]
     pull_policy: never
     depends_on:
