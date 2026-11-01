@@ -87,9 +87,10 @@ para ele). Cada view traz a descrição dela; as regras abaixo são as que atrav
   foi recalculado. Resultados antigos podem trazer esse fator (0,04%), sem como distingui-los.
 - leitura.movimento_posicao / movimento_opcao: extrato de cada posição (OPEN, INCREASE, DECREASE,
   ADJUSTMENT) com o resultado do movimento e o custo médio resultante.
-- leitura.provento: proventos recebidos; tipo 'DIVIDENDO', 'JCP' ou 'ALUGUEL'; valor na moeda do
-  ativo; pago_em. Opcionais (nulos quando não informados): data_com, cotas, valor_por_cota e o
-  retrato do dia do pagamento (investido, valor_de_mercado, preco_medio, preco_cotado).
+- leitura.provento: proventos recebidos; tipo 'DIVIDENDO', 'JCP', 'ALUGUEL' ou 'CUPOM' (cupom de
+  título de renda fixa do exterior; o título fica no CB); valor na moeda do ativo; pago_em.
+  Opcionais (nulos quando não informados): data_com, cotas, valor_por_cota e o retrato
+  do dia do pagamento (investido, valor_de_mercado, preco_medio, preco_cotado).
   yield_on_cost e dividend_yield ficam em PONTOS PERCENTUAIS (0,42 = 0,42%, não 42%); nos
   importados são deste pagamento: valor sobre o investido e sobre o valor de mercado.""",
 }
