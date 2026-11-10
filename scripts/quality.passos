@@ -1,0 +1,3 @@
+--profile quality build --pull quality
+--profile quality run --build --rm quality
+--profile quality run --rm --no-deps quality pip-audit --progress-spinner=off
