@@ -2,8 +2,10 @@
 
 Ferramentas prontas (cb_*, crv_*) consultam as views do esquema `leitura`, que
 cada sistema publica com as regras do próprio domínio (status efetivo, saldo,
-preço que vale); `esquema` e `sql` cobrem o resto. Nenhuma regra é reescrita
-aqui, e nenhuma tabela dos sistemas é lida. Tudo passa por `Conexoes.consultar`,
+preço que vale); `esquema` e `sql` cobrem o resto. O desenho é não reescrever
+regra aqui; a exceção conhecida é `cb_faturas`, que separa "pagamento de fatura"
+de crédito por regex na descrição da linha do extrato (a regra mora no CB, sem
+coluna na view). Nenhuma tabela dos sistemas é lida. Tudo passa por `Conexoes.consultar`,
 que abre transação READ ONLY com o usuário de leitura.
 """
 
