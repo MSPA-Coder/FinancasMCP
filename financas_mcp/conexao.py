@@ -10,7 +10,10 @@ Aqui vão as camadas
 de cima, para uma consulta errada falhar cedo e barata:
 
 - a transação é aberta como READ ONLY, com tempo máximo;
-- só um comando, e começando por SELECT ou WITH;
+- um comando só: `validar_consulta` dá a mensagem amigável, mas quem garante é
+  o protocolo estendido (`prepare=True`), que o servidor recusa com vários
+  comandos; o analisador de texto não entende dollar-quoting nem `E'\\''`;
+- começando por SELECT ou WITH;
 - o resultado é cortado em `LIMITE_DE_LINHAS`, com aviso.
 """
 
@@ -103,7 +106,9 @@ def _executar(banco: Banco, porta: int, consultas: list[tuple[str, dict | tuple 
         resultados = []
         for sql, parametros in consultas:
             with conexao.cursor() as cursor:
-                cursor.execute(sql, parametros)
+                # prepare=True usa o protocolo estendido: o servidor recusa mais de um
+                # comando por consulta, mesmo que o validador seja enganado (`$$'$$;`).
+                cursor.execute(sql, parametros, prepare=True)
                 colunas = [c.name for c in cursor.description or []]
                 linhas = cursor.fetchmany(limite + 1)
                 resultados.append((colunas, linhas))

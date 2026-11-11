@@ -129,6 +129,24 @@ def test_tabela_dos_sistemas_vira_um_erro_que_aponta_para_as_views():
 
 
 @pytest.mark.banco_local
+@pytest.mark.parametrize("consulta", [
+    # O validador de texto não entende dollar-quoting nem E'\'': para ele, o `;` está
+    # dentro de uma string. Quem barra é o protocolo estendido (prepare=True).
+    "select $$'$$ as a; commit; create temp table t(x int); select 'x'",
+    "select E'\\''; select 2; select 'x'",
+])
+def test_ferramenta_sql_recusa_varios_comandos_escondidos_em_literal(consulta):
+    assert validar_consulta(consulta)  # a barreira de texto é enganada: o caso é real
+    with pytest.raises(ConsultaRecusada, match="multiple commands"):
+        rodar(server.sql("cb", consulta))
+
+
+@pytest.mark.banco_local
+def test_ferramenta_sql_continua_aceitando_um_comando_com_dollar_quoting():
+    assert rodar(server.sql("cb", "select $$a$$ as t"))["linhas"] == [["a"]]
+
+
+@pytest.mark.banco_local
 def test_ferramenta_sql_recusa_escrita():
     with pytest.raises(ConsultaRecusada):
         rodar(server.sql("cb", "delete from lancamento"))
