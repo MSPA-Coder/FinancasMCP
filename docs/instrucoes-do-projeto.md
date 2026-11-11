@@ -26,7 +26,7 @@ Como trabalhar:
 
 Contexto:
 - O CB começa em 31/12/2025 (saldos iniciais nessa data).
-- Cartões: Carbon (C6, fecha dia 19, vence 25) e Black (XP, fecha 1, vence 10).
+- Cartões: Carbon e Black (cadastre aqui bancos e dias de fechamento e vencimento, se quiser).
 
 Meus objetivos:
 - (preencha: por exemplo, reserva de emergência de X meses, reduzir gasto com Y, meta de

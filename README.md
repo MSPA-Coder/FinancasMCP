@@ -86,7 +86,7 @@ uv sync --python 3.15 --locked
 # usuário de leitura + config (senhas geradas e gravadas, nunca impressas)
 .\.venv\Scripts\python.exe -m financas_mcp.usuario_leitura local
 .\.venv\Scripts\python.exe -m financas_mcp.usuario_leitura producao `
-    --host 100.94.82.91 --chave C:\caminho\da\chave.key --chave-do-host "ssh-ed25519 AAAA..."
+    --host <ip-do-vps> --chave C:\caminho\da\chave.key --chave-do-host "ssh-ed25519 AAAA..."
 ```
 
 `ambiente` no `config.toml` é o padrão, hoje `producao` (o `usuario_leitura` não o

@@ -1,7 +1,7 @@
 """Cria (ou recria) o usuário de leitura `mcp_leitura` nos bancos e grava a configuração.
 
     python -m financas_mcp.usuario_leitura local
-    python -m financas_mcp.usuario_leitura producao --host 100.94.82.91 --chave C:\\...\\chave.key
+    python -m financas_mcp.usuario_leitura producao --host <ip-do-vps> --chave C:\\...\\chave.key
 
 Para cada sistema: gera uma senha nova, aplica o SQL pelo `psql` de dentro do
 contêiner do Postgres (localmente ou por SSH no VPS) e grava a senha em

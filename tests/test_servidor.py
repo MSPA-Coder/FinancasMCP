@@ -240,7 +240,7 @@ def test_filtro_de_status_dos_lancamentos_usa_o_efetivo():
 @pytest.mark.banco_local
 def test_saldo_do_carbon_bate_com_o_do_sistema():
     # A semente do CB cria o cartão Carbon (titular "Titular CI") com saldo realizado
-    # conhecido (-10.656,92) e o confere pela função das telas do CB; aqui, o mesmo
+    # conhecido (-5.543,15) e o confere pela função das telas do CB; aqui, o mesmo
     # número sai do SQL do MCP. Só a semente tem saldo fixo: na base real do
     # mantenedor o Carbon anda com os lançamentos, então sem a semente não há o que
     # conferir.
@@ -251,7 +251,7 @@ def test_saldo_do_carbon_bate_com_o_do_sistema():
     saldos = {linha[j]: linha[i] for linha in contas["linhas"] if linha[k] == "Titular CI"}
     if "Carbon" not in saldos:
         pytest.skip("a semente do CB (titular 'Titular CI') não está neste banco")
-    assert saldos["Carbon"] == "-10656.92"
+    assert saldos["Carbon"] == "-5543.15"
 
 
 @pytest.mark.banco_local

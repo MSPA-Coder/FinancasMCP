@@ -6,9 +6,8 @@ Roda no ambiente do próprio CB, num banco recém-migrado:
 
 Cria o pouco que os testes exigem: um titular, uma conta comum, o cartão
 "Carbon" com compras realizadas e uma fatura importada, e lançamentos em
-aberto. O nome Carbon e o saldo vêm da base local do mantenedor, onde
-`test_saldo_do_carbon_bate_com_o_do_sistema` nasceu: aqui as compras somam o
-mesmo -10.656,92.
+aberto. O nome Carbon e o saldo são inventados e fixos, para
+`test_saldo_do_carbon_bate_com_o_do_sistema`: as compras somam -5.543,15.
 
 Antes de terminar, a semente confere esse saldo pela função que as telas do CB
 usam (`decimal_balance_before`, a mesma do contrato v4). O teste do FinancasMCP
@@ -48,8 +47,8 @@ from django.utils.timezone import localdate  # noqa: E402
 from reports.services import decimal_balance_before  # noqa: E402
 from transactions.models import CashFlowCategory, CashFlowEntry  # noqa: E402
 
-SALDO_DO_CARBON = Decimal("-10656.92")
-COMPRAS_DO_CARBON = (Decimal("4000.00"), Decimal("3656.92"), Decimal("3000.00"))
+SALDO_DO_CARBON = Decimal("-5543.15")
+COMPRAS_DO_CARBON = (Decimal("2500.00"), Decimal("1843.15"), Decimal("1200.00"))
 
 if FinancialAccount.objects.exists():
     raise SystemExit("semente_cb: recusada, o banco já tem contas. Ela só roda num banco recém-migrado.")

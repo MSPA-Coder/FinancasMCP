@@ -7,7 +7,7 @@ de leitura. Formato:
     ambiente = "producao"          # qual bloco abaixo vale
 
     [ambientes.producao.ssh]       # sem este bloco, conexão direta
-    host = "100.94.82.91"
+    host = "<ip-do-vps>"
     usuario = "ubuntu"
     chave = 'C:\\caminho\\da\\chave.key'
     chave_do_host = "ssh-ed25519 AAAA..."   # fixa o servidor: sem MITM
