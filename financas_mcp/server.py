@@ -3,10 +3,10 @@
 Ferramentas prontas (cb_*, crv_*) consultam as views do esquema `leitura`, que
 cada sistema publica com as regras do próprio domínio (status efetivo, saldo,
 preço que vale); `esquema` e `sql` cobrem o resto. O desenho é não reescrever
-regra aqui; a exceção conhecida é `cb_faturas`, que separa "pagamento de fatura"
-de crédito por regex na descrição da linha do extrato (a regra mora no CB, sem
-coluna na view). Nenhuma tabela dos sistemas é lida. Tudo passa por `Conexoes.consultar`,
-que abre transação READ ONLY com o usuário de leitura.
+regra aqui: até "pagamento de fatura", em `cb_faturas`, vem da coluna
+`pagamento_de_fatura` que o CB publica em `leitura.extrato_linha`. Nenhuma
+tabela dos sistemas é lida. Tudo passa por `Conexoes.consultar`, que abre
+transação READ ONLY com o usuário de leitura.
 """
 
 from __future__ import annotations
@@ -271,8 +271,8 @@ async def cb_faturas(ambiente: Ambiente | None = None) -> dict:
     importadas, futuro = await c.consultar_conjunto("cb", [("""
         select b.conta as cartao, b.id as importacao, b.arquivo, b.importada_em::date as importada_em,
                sum(-l.valor) filter (where l.valor < 0) as compras,
-               sum(l.valor) filter (where l.valor > 0 and l.descricao !~* '^pag(amentos?)?\\y') as creditos,
-               sum(l.valor) filter (where l.valor > 0 and l.descricao ~* '^pag(amentos?)?\\y') as pagamentos,
+               sum(l.valor) filter (where l.valor > 0 and not l.pagamento_de_fatura) as creditos,
+               sum(l.valor) filter (where l.pagamento_de_fatura) as pagamentos,
                min(l.data) as primeira_linha, max(l.data) as ultima_linha
         from leitura.extrato_importacao b
         join leitura.extrato_linha l on l.importacao_id = b.id

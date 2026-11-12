@@ -23,9 +23,8 @@ ControleBancario (`cb`) e do ControleRendaVariavel (`crv`).
   auditoria não têm view. Toda consulta roda numa transação `READ ONLY`, com
   tempo máximo e limite de linhas.
 - As regras do domínio (status efetivo do lançamento, saldo, o preço que vale, o
-  sinal da posição vendida) moram nas views, uma vez, e não são reescritas aqui,
-  com uma exceção conhecida: `cb_faturas` reconhece "pagamento de fatura" por
-  regex na descrição do extrato, até o CB expor essa coluna na view.
+  sinal da posição vendida, o que é pagamento de fatura no extrato do cartão)
+  moram nas views, uma vez, e não são reescritas aqui.
   O PostgreSQL recusa remover ou trocar o tipo de uma coluna que uma view lê, então
   uma mudança de schema que quebraria este servidor reprova na suíte do sistema
   que mudou, e não em produção.

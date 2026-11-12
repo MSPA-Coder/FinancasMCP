@@ -63,7 +63,7 @@ traz a descrição dela; as regras abaixo são as que atravessam várias.
   o horizonte de Parâmetros (6 meses); parcelas vêm todas.
 - leitura.extrato_linha: linhas importadas de extratos e faturas (valor com sinal: negativo é
   saída). Em cartão, cada leitura.extrato_importacao é uma fatura; lancamento_conciliado_id liga
-  a linha ao lançamento.
+  a linha ao lançamento, e pagamento_de_fatura separa o pagamento dos demais créditos.
 - leitura.orcamento_mensal: meta por categoria, ano e mês, em BRL; só `ativo` vale.
 - leitura.fechamento_mes: meses fechados por conta (não mudam sem reabertura).
 - leitura.saldo_conferido: saldos informados por conta, data e origem (manual, print, myprofit).
