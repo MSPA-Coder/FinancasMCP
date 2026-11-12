@@ -79,6 +79,16 @@ def test_provisionamento_concede_so_view_e_remove_privilegios_anteriores(provisi
     assert admin.execute("SELECT valor FROM public.qa_privado").fetchone()[0] != 0
 
 
+def test_papel_de_leitura_nasce_com_limite_para_sessao_ociosa_e_espera_de_trava(provisionamento):
+    """Uma transação aberta e esquecida, ou presa atrás de uma migração, não segura um dos 5 slots."""
+    admin, dados, usuario = provisionamento
+    aplicar(admin)
+    with psycopg.connect(**{**dados, "user": usuario, "password": "senha-sintetica-inicial"}, autocommit=True) as leitura:
+        assert leitura.execute("SHOW idle_in_transaction_session_timeout").fetchone()[0] == "1min"
+        assert leitura.execute("SHOW lock_timeout").fetchone()[0] == "5s"
+        assert leitura.execute("SHOW statement_timeout").fetchone()[0] == "30s"
+
+
 def test_view_ausente_recusa_antes_de_alterar_papel(provisionamento):
     admin, _, usuario = provisionamento
     admin.execute(sql.SQL("CREATE ROLE {} LOGIN CONNECTION LIMIT 7").format(sql.Identifier(usuario)))

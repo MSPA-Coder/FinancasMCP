@@ -76,6 +76,9 @@ ALTER ROLE {USUARIO} WITH LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATIO
   CONNECTION LIMIT 5 PASSWORD '{senha}';
 ALTER ROLE {USUARIO} SET default_transaction_read_only = on;
 ALTER ROLE {USUARIO} SET statement_timeout = '30s';
+-- Sessão presa (BEGIN aberto) ou espera por trava de migração não seguram um dos 5 slots.
+ALTER ROLE {USUARIO} SET idle_in_transaction_session_timeout = '60s';
+ALTER ROLE {USUARIO} SET lock_timeout = '5s';
 ALTER ROLE {USUARIO} SET search_path = {ESQUEMA}, pg_catalog;
 REVOKE ALL ON ALL TABLES IN SCHEMA public FROM {USUARIO};
 REVOKE ALL ON ALL SEQUENCES IN SCHEMA public FROM {USUARIO};
