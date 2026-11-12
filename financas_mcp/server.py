@@ -4,7 +4,9 @@ Ferramentas prontas (cb_*, crv_*) consultam as views do esquema `leitura`, que
 cada sistema publica com as regras do próprio domínio (status efetivo, saldo,
 preço que vale); `esquema` e `sql` cobrem o resto. O desenho é não reescrever
 regra aqui: até "pagamento de fatura", em `cb_faturas`, vem da coluna
-`pagamento_de_fatura` que o CB publica em `leitura.extrato_linha`. Nenhuma
+`pagamento_de_fatura` que o CB publica em `leitura.extrato_linha`. As exceções
+são `cb_orcamento` (o que conta como gasto do orçamento) e `cb_projecao_de_caixa`
+(soma da movimentação por data), que compõem a conta sobre as views. Nenhuma
 tabela dos sistemas é lida. Tudo passa por `Conexoes.consultar`, que abre
 transação READ ONLY com o usuário de leitura.
 """
