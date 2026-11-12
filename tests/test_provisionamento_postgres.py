@@ -197,6 +197,43 @@ def test_consulta_cancelada_no_banco_vira_recusa_controlada_e_recupera(provision
     asyncio.run(executar())
 
 
+def _gerente(provisionamento, monkeypatch):
+    admin, dados, usuario = provisionamento
+    aplicar(admin)
+    monkeypatch.setenv("FINANCAS_MCP_LOCAL_HOST", dados["host"])
+    banco = Banco(int(dados.get("port", 5432)), dados["dbname"], usuario, "senha-sintetica-inicial")
+    return conexao.Conexoes(Config("sintetico", None, {"cb": banco}))
+
+
+def test_resultado_enorme_e_cortado_no_limite_sem_esperar_o_resto(provisionamento, monkeypatch):
+    """Cem milhões de linhas voltam truncadas na hora: o servidor para de enviar na primeira além do limite.
+
+    Carregar tudo para cortar depois estoura a memória do processo ou o tempo máximo (15 s).
+    """
+    gerente = _gerente(provisionamento, monkeypatch)
+    inicio = time.monotonic()
+    resultado = asyncio.run(gerente.consultar("cb", "SELECT generate_series(1, 100000000) AS g", limite=5))
+    assert resultado["quantidade"] == 5 and resultado["truncado"] is True
+    assert resultado["colunas"] == ["g"]
+    assert resultado["linhas"][0] == [1]
+    assert time.monotonic() - inicio < 10
+
+
+def test_consulta_sem_linhas_mantem_as_colunas_e_vira_resultado_completo(provisionamento, monkeypatch):
+    gerente = _gerente(provisionamento, monkeypatch)
+    vazio = asyncio.run(gerente.consultar("cb", "SELECT valor FROM leitura.qa_saldos WHERE false"))
+    assert (vazio["colunas"], vazio["linhas"], vazio["quantidade"], vazio["truncado"]) == (["valor"], [], 0, False)
+    exato = asyncio.run(gerente.consultar("cb", "SELECT g FROM generate_series(1, 3) g", limite=3))
+    assert (exato["quantidade"], exato["truncado"]) == (3, False)
+
+
+def test_servidor_recusa_varios_comandos_escondidos_em_literal_sem_executar_nenhum(provisionamento, monkeypatch):
+    gerente = _gerente(provisionamento, monkeypatch)
+    with pytest.raises(conexao.ConsultaRecusada, match="multiple commands"):
+        asyncio.run(gerente.consultar("cb", "SELECT $$'$$ AS a; CREATE TEMP TABLE t(x int); SELECT 'x'"))
+    assert asyncio.run(gerente.consultar("cb", "SELECT count(*) FROM leitura.qa_saldos"))["linhas"] == [[1]]
+
+
 def test_partes_da_resposta_compartilham_snapshot_durante_escrita(provisionamento, monkeypatch):
     admin, dados, usuario = provisionamento
     aplicar(admin)

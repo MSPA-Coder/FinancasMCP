@@ -11,7 +11,7 @@ de cima, para uma consulta errada falhar cedo e barata:
 
 - a transação é aberta como READ ONLY, com tempo máximo;
 - um comando só: `validar_consulta` dá a mensagem amigável, mas quem garante é
-  o protocolo estendido (`prepare=True`), que o servidor recusa com vários
+  o protocolo estendido (`cursor.stream`), que o servidor recusa com vários
   comandos; o analisador de texto não entende dollar-quoting nem `E'\\''`;
 - começando por SELECT ou WITH;
 - o resultado é cortado em `LIMITE_DE_LINHAS`, com aviso.
@@ -24,6 +24,7 @@ import datetime as dt
 import logging
 import os
 import re
+from contextlib import closing
 from decimal import Decimal
 from typing import Any
 
@@ -106,11 +107,22 @@ def _executar(banco: Banco, porta: int, consultas: list[tuple[str, dict | tuple 
         resultados = []
         for sql, parametros in consultas:
             with conexao.cursor() as cursor:
-                # prepare=True usa o protocolo estendido: o servidor recusa mais de um
-                # comando por consulta, mesmo que o validador seja enganado (`$$'$$;`).
-                cursor.execute(sql, parametros, prepare=True)
+                # `stream` usa o protocolo estendido: o servidor recusa mais de um comando
+                # por consulta, mesmo que o validador seja enganado (`$$'$$;`). Recebe uma
+                # linha por vez e para na primeira além do limite (o servidor cancela o
+                # resto): `fetchmany` depois de `execute` carregaria o resultado inteiro
+                # na memória antes de cortar.
+                linhas = []
+                with closing(cursor.stream(sql, parametros)) as fluxo:
+                    for linha in fluxo:
+                        linhas.append(linha)
+                        if len(linhas) > limite:
+                            break
+                if not linhas:
+                    # `stream` não informa as colunas de um resultado vazio. Repetir a
+                    # consulta, que no mesmo snapshot segue vazia, não carrega nada.
+                    cursor.execute(sql, parametros, prepare=True)
                 colunas = [c.name for c in cursor.description or []]
-                linhas = cursor.fetchmany(limite + 1)
                 resultados.append((colunas, linhas))
         conexao.execute("ROLLBACK")
     return resultados

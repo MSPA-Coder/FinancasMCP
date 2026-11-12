@@ -131,7 +131,7 @@ def test_tabela_dos_sistemas_vira_um_erro_que_aponta_para_as_views():
 @pytest.mark.banco_local
 @pytest.mark.parametrize("consulta", [
     # O validador de texto não entende dollar-quoting nem E'\'': para ele, o `;` está
-    # dentro de uma string. Quem barra é o protocolo estendido (prepare=True).
+    # dentro de uma string. Quem barra é o protocolo estendido (`cursor.stream`).
     "select $$'$$ as a; commit; create temp table t(x int); select 'x'",
     "select E'\\''; select 2; select 'x'",
 ])
