@@ -1,7 +1,7 @@
 """Precisão, parametrização e recusa são verificadas contra PostgreSQL real."""
 
 import asyncio
-from datetime import date
+from datetime import UTC, date, datetime
 
 import pytest
 
@@ -176,6 +176,44 @@ def test_ambiente_desconhecido_e_recusado_dizendo_quais_existem(tmp_path, monkey
     server._ambientes = None
     with pytest.raises(ConsultaRecusada, match="local, producao"):
         server.conexoes("staging")
+
+
+class _Registro:
+    """Ocupa o lugar do banco e guarda os parâmetros que a ferramenta mandou."""
+
+    def __init__(self):
+        self.parametros = None
+
+    async def consultar(self, sistema, sql, parametros=None, limite=2000):
+        self.parametros = parametros
+        return {}
+
+
+@pytest.mark.parametrize(("instante_utc", "dia_em_sao_paulo"), [
+    # 22h30 em São Paulo ainda é o dia 11; em UTC já é o dia 12.
+    (datetime(2026, 11, 12, 1, 30, tzinfo=UTC), date(2026, 11, 11)),
+    # Virada do ano: em UTC já é 2027, em São Paulo ainda é 31/12/2026.
+    (datetime(2027, 1, 1, 1, 30, tzinfo=UTC), date(2026, 12, 31)),
+    (datetime(2026, 11, 12, 12, 0, tzinfo=UTC), date(2026, 11, 12)),
+])
+def test_data_padrao_das_ferramentas_e_o_dia_de_sao_paulo(monkeypatch, instante_utc, dia_em_sao_paulo):
+    """O 'hoje' das ferramentas é o do fuso do domínio, como `leitura.hoje()`, não o do relógio do Windows."""
+    registro = _Registro()
+    monkeypatch.setattr(server, "_agora", lambda: instante_utc)
+    monkeypatch.setattr(server, "conexoes", lambda ambiente=None: registro)
+
+    asyncio.run(server.cb_resumo_mensal())
+    assert registro.parametros["fim"] == dia_em_sao_paulo
+    assert registro.parametros["inicio"] == date(dia_em_sao_paulo.year, 1, 1)
+
+    asyncio.run(server.cb_orcamento())
+    assert (registro.parametros["ano"], registro.parametros["mes"]) == (dia_em_sao_paulo.year, dia_em_sao_paulo.month)
+
+    asyncio.run(server.crv_operacoes())
+    assert registro.parametros["fim"] == dia_em_sao_paulo
+
+    asyncio.run(server.crv_proventos())
+    assert registro.parametros["fim"] == dia_em_sao_paulo
 
 
 @pytest.mark.banco_local

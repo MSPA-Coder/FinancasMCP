@@ -11,8 +11,9 @@ transação READ ONLY com o usuário de leitura.
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import UTC, date, datetime
 from typing import Literal
+from zoneinfo import ZoneInfo
 
 from mcp.server.mcpserver import MCPServer
 from mcp.types import ToolAnnotations
@@ -26,6 +27,9 @@ mcp = MCPServer("financas", instructions=dominio.INSTRUCOES)
 LEITURA = ToolAnnotations(readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False)
 _ambientes: Ambientes | None = None
 _conexoes: dict[str, Conexoes] | None = None
+
+# Fuso do domínio, o de `leitura.hoje()` no CB. O tzdata vem com o psycopg no Windows.
+FUSO = ZoneInfo("America/Sao_Paulo")
 
 Sistema = Literal["cb", "crv"]
 # `None` vale o ambiente padrão do config.toml; cada resposta traz o `ambiente` que leu.
@@ -45,12 +49,22 @@ def conexoes(ambiente: str | None = None) -> Conexoes:
     return _conexoes[nome]
 
 
+def _agora() -> datetime:
+    """O instante atual; fronteira do relógio, trocada nos testes."""
+    return datetime.now(UTC)
+
+
+def _hoje() -> date:
+    """O dia no fuso do domínio (São Paulo), o mesmo de `leitura.hoje()`, e não o do Windows."""
+    return _agora().astimezone(FUSO).date()
+
+
 def _data(texto: str | None, padrao: date) -> date:
     return date.fromisoformat(texto) if texto else padrao
 
 
 def _inicio_do_ano() -> date:
-    return date(date.today().year, 1, 1)
+    return date(_hoje().year, 1, 1)
 
 
 # --- Genéricas ------------------------------------------------------------------
@@ -69,7 +83,7 @@ async def sistemas(ambiente: Ambiente | None = None) -> dict:
         "ambiente": config.ambiente,
         "padrao": _ambientes.padrao,
         "ambientes": list(_ambientes.configs),
-        "hoje": date.today().isoformat(),
+        "hoje": _hoje().isoformat(),
         "sistemas": {nome: dominio.NOMES[nome] for nome in config.sistemas},
     }
 
@@ -154,7 +168,7 @@ async def cb_resumo_mensal(
     somente_gerenciais=True exclui transferências entre contas e aplicações (não são gasto).
     Datas AAAA-MM-DD; padrão: do início do ano até hoje (ou até o fim do ano no previsto).
     """
-    hoje = date.today()
+    hoje = _hoje()
     inicio_d = _data(inicio, _inicio_do_ano())
     fim_d = _data(fim, hoje if visao == "realizado" else date(hoje.year, 12, 31))
     filtro_visao = {
@@ -233,7 +247,7 @@ async def cb_orcamento(ano: int | None = None, mes: int | None = None, ambiente:
 
     Inclui categorias com gasto e sem meta (planejado vazio). Padrão: mês atual.
     """
-    hoje = date.today()
+    hoje = _hoje()
     ano = ano or hoje.year
     mes = mes or hoje.month
     return await conexoes(ambiente).consultar("cb", """
@@ -348,7 +362,7 @@ async def crv_proventos(
 
     Padrão: últimos 12 meses. Valores na moeda do ativo.
     """
-    hoje = date.today()
+    hoje = _hoje()
     inicio_d = _data(inicio, date(hoje.year - 1, hoje.month, 1))
     fim_d = _data(fim, hoje)
     grupo = {
@@ -378,7 +392,7 @@ async def crv_operacoes(
     Nas operações de opção, e_opcao é verdadeiro, ativo é o código da opção e objeto, o ativo-objeto.
     """
     inicio_d = _data(inicio, _inicio_do_ano())
-    fim_d = _data(fim, date.today())
+    fim_d = _data(fim, _hoje())
     return await conexoes(ambiente).consultar("crv", """
         select o.id, o.ativo, o.objeto, o.e_opcao, o.moeda, o.lado, o.quantidade,
                o.preco_de_entrada as preco_entrada, o.preco_de_saida as preco_saida, o.aberta_em,
